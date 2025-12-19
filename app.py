@@ -5,56 +5,66 @@ import pandas as pd
 from collections import Counter
 import time
 
-# --- CONFIGURATION LUXE ---
-st.set_page_config(page_title="DJ Ricardo228 Key Master | Premium", page_icon="✨", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Amapiano Master | Wood Edition", page_icon="🪵", layout="wide")
 
-# CSS Personnalisé pour l'aspect Luxueux
+# CSS Personnalisé : Thème Boisé & Blanc
 st.markdown("""
     <style>
-    /* Fond principal */
+    /* Fond principal : Couleur crème/blanc cassé */
     .stApp {
-        background: radial-gradient(circle at top right, #1e1e1e, #0a0a0a);
+        background-color: #F9F7F2;
     }
     
-    /* Titres */
+    /* Titre principal avec dégradé boisé */
     h1 {
-        font-family: 'Helvetica Neue', sans-serif;
-        font-weight: 800;
-        letter-spacing: -1px;
-        background: -webkit-linear-gradient(#e2b04a, #9d762e);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        font-family: 'Playfair Display', serif;
+        font-weight: 900;
+        color: #3D2B1F; /* Brun profond */
         text-align: center;
-        padding-bottom: 20px;
+        padding-top: 20px;
     }
     
-    /* Cartes de résultats */
+    /* Cartes de résultats : Blanc pur sur fond crème */
     div[data-testid="stMetric"] {
-        background-color: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(226, 176, 74, 0.3);
-        border-radius: 20px;
-        padding: 25px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        transition: transform 0.3s ease;
+        background-color: #FFFFFF;
+        border: 1px solid #E0D7C6;
+        border-left: 5px solid #5D4037; /* Accent bois sombre */
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
     
-    div[data-testid="stMetric"]:hover {
-        transform: translateY(-5px);
-        border-color: rgba(226, 176, 74, 0.8);
+    /* Style du texte des métriques */
+    div[data-testid="stMetricLabel"] {
+        color: #8D6E63 !important;
+        font-weight: bold;
+    }
+    
+    div[data-testid="stMetricValue"] {
+        color: #3D2B1F !important;
     }
 
-    /* Boutons et Upload */
+    /* Zone d'upload */
     .stFileUploader {
-        border: 2px dashed rgba(226, 176, 74, 0.2);
+        background-color: #FFFFFF;
+        border: 2px dashed #D7CCC8;
         border-radius: 15px;
-        padding: 20px;
     }
-    
-    /* Texte info */
+
+    /* Boutons et éléments interactifs */
+    .stButton>button {
+        background-color: #5D4037;
+        color: white;
+        border-radius: 8px;
+        border: none;
+    }
+
+    /* Alertes et Info */
     .stInfo {
-        background-color: rgba(226, 176, 74, 0.05);
-        color: #e2b04a;
-        border: 1px solid rgba(226, 176, 74, 0.2);
+        background-color: #EFEBE9;
+        color: #4E342E;
+        border: 1px solid #D7CCC8;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -72,7 +82,7 @@ def get_camelot(key, mode):
         'E minor': '9A', 'G major': '9B', 'B minor': '10A', 'D major': '10B', 'F# minor': '11A', 'A major': '11B',
         'C# minor': '12A', 'E major': '12B'
     }
-    return camelot_map.get(f"{key} {mode}", "1A") # Fallback to 1A for Amapiano logic
+    return camelot_map.get(f"{key} {mode}", "1A")
 
 def analyze_segment(y_segment, sr):
     if len(y_segment) < sr: return None
@@ -88,21 +98,21 @@ def analyze_segment(y_segment, sr):
                 best_score, res_key, res_mode = score, NOTES[i], mode
     return (res_key, res_mode)
 
-# --- HEADER LUXE ---
-st.markdown("<h1>✨ AMAPIANO KEY MASTER PRO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #888;'>L'intelligence artificielle au service de l'harmonie musicale.</p>", unsafe_allow_html=True)
+# --- HEADER ---
+st.markdown("<h1>🤎 AMAPIANO MASTER : WOOD EDITION</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #5D4037; font-style: italic;'>Analyse organique et précise de vos productions.</p>", unsafe_allow_html=True)
 
-# Zone de dépôt de fichier
+# Zone de dépôt
 file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
 
 if file:
-    with st.spinner("Analyse Haute Fidélité en cours..."):
-        # Analyse
+    with st.spinner("Analyse des fréquences boisées..."):
         y_full, sr = librosa.load(file)
         duration_mins = int(librosa.get_duration(y=y_full, sr=sr) // 60)
         
         segment_results = []
-        for m in range(min(duration_mins, 6)): # On analyse les 6 premières minutes max
+        # Analyse minute par minute
+        for m in range(min(duration_mins, 8)):
             start_sample = m * 60 * sr
             end_sample = (m + 1) * 60 * sr
             res = analyze_segment(y_full[start_sample:end_sample], sr)
@@ -115,35 +125,32 @@ if file:
         tempo, _ = librosa.beat.beat_track(y=y_full, sr=sr)
         camelot = get_camelot(final_key, final_mode)
 
-        # AFFICHAGE DES RÉSULTATS (Style Dashboard)
+        # AFFICHAGE RÉSULTATS
         st.markdown("<br>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        c1.metric("Tonalité", f"{final_key} {final_mode.capitalize()}")
-        c2.metric("Notation Camelot", camelot)
-        c3.metric("Tempo", f"{int(tempo)} BPM")
+        c1.metric("TONALITÉ", f"{final_key} {final_mode.upper()}")
+        c2.metric("NOTATION CAMELOT", camelot)
+        c3.metric("TEMPO", f"{int(tempo)} BPM")
 
-        # --- SECTION AUDITIVE LUXE ---
-        st.markdown("<br><hr style='border: 0.5px solid rgba(226, 176, 74, 0.2);'>", unsafe_allow_html=True)
-        st.subheader("🔊 Studio de Vérification")
+        # --- SECTION AUDIO ---
+        st.divider()
+        st.markdown("<h3 style='color: #3D2B1F;'>🔊 Studio de Contrôle</h3>", unsafe_allow_html=True)
         
         v1, v2 = st.columns(2)
         with v1:
-            st.markdown("**Morceau Original**")
+            st.markdown("**Fichier Audio**")
             st.audio(file)
-        
         with v2:
-            st.markdown(f"**Référence Fréquentielle ({final_key})**")
+            st.markdown(f"**Note Témoin ({final_key})**")
             note_freqs = {'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88}
             freq = note_freqs.get(final_key, 440.0)
             t = np.linspace(0, 3, int(22050 * 3), False)
             tone = 0.5 * np.sin(2 * np.pi * freq * t)
             st.audio(tone, sample_rate=22050)
 
-        # --- CONSEILS DE MIXAGE ---
+        # --- CONSEILS ---
         st.markdown("<br>", unsafe_allow_html=True)
-        num = int(camelot[:-1])
-        st.info(f"✨ **Expertise Harmonique :** Pour un enchaînement luxueux, privilégiez un titre en **{camelot}** ou effectuez une transition énergétique vers **{(num)%12+1}A**.")
+        st.info(f"🌿 **Conseil Harmonique :** Votre morceau en **{final_key} {final_mode}** se mariera parfaitement avec des pistes en **{camelot}**. Pour une montée en énergie douce, essayez la clé suivante sur la roue Camelot.")
 
 else:
-    # État vide élégant
-    st.markdown("<br><br><p style='text-align: center; color: #444;'>Veuillez importer un fichier audio pour commencer l'analyse.</p>", unsafe_allow_html=True)
+    st.markdown("<br><br><p style='text-align: center; color: #D7CCC8;'>En attente d'un signal audio...</p>", unsafe_allow_html=True)
