@@ -98,7 +98,7 @@ def analyze_audio(file):
     return res_key, int(tempo)
 
 # --- INTERFACE ---
-st.markdown("<h1>AMAPIANO ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER</h1>", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
 
