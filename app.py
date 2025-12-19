@@ -7,69 +7,88 @@ import datetime
 import os
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Amapiano Master | Universal", page_icon="⚫", layout="wide")
+st.set_page_config(page_title="Amapiano Master | Soft Mode", page_icon="⚫", layout="wide")
 
 if 'history' not in st.session_state:
     st.session_state['history'] = []
 
-# --- STYLE CSS NOIR ET BLANC ---
+# --- STYLE CSS ADOUCI (Anti-Fatigue) ---
 st.markdown("""
     <style>
-    .stApp { background-color: #000000; color: #FFFFFF; }
+    /* Fond Noir Adouci */
+    .stApp {
+        background-color: #0F0F0F;
+        color: #E0E0E0;
+    }
     
+    /* Titre Gris Clair */
     h1 {
         font-family: 'Inter', sans-serif;
-        font-weight: 200;
-        letter-spacing: 5px;
-        color: #FFFFFF;
+        font-weight: 300;
+        letter-spacing: 4px;
+        color: #E0E0E0;
         text-align: center;
-        border-bottom: 1px solid #333;
+        border-bottom: 1px solid #222;
         padding-bottom: 20px;
     }
 
+    /* Animation Pulse discrète */
     @keyframes pulse {
-        0% { opacity: 1; }
-        50% { opacity: 0.3; }
-        100% { opacity: 1; }
+        0% { opacity: 0.8; }
+        50% { opacity: 0.4; }
+        100% { opacity: 0.8; }
     }
-    .analyzing { animation: pulse 1.5s infinite; }
+    .analyzing { animation: pulse 2s infinite; }
 
+    /* Titre de la track en blanc cassé */
     .track-title {
         font-family: 'Inter', sans-serif;
-        font-size: 2.5rem !important;
-        font-weight: 800;
+        font-size: 2.2rem !important;
+        font-weight: 700;
         text-transform: uppercase;
-        color: #FFFFFF;
+        color: #E0E0E0;
         text-align: center;
-        margin: 40px 0;
-        line-height: 1.2;
-        border: 2px solid #FFFFFF;
-        padding: 20px;
-        word-wrap: break-word;
+        margin: 30px 0;
+        border: 1px solid #333;
+        padding: 25px;
+        background-color: #151515;
     }
 
+    /* Metrics : Bordures grises et fond sombre */
     div[data-testid="stMetric"] {
-        background-color: #000000;
-        border: 1px solid #FFFFFF;
-        border-radius: 0px;
-        padding: 25px;
+        background-color: #121212;
+        border: 1px solid #333;
+        border-radius: 4px;
+        padding: 20px;
     }
     
-    div[data-testid="stMetricLabel"] { color: #888888 !important; letter-spacing: 2px; }
-    div[data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2.5rem !important; }
+    div[data-testid="stMetricLabel"] { 
+        color: #888888 !important; 
+        font-size: 0.9rem !important;
+    }
+    
+    div[data-testid="stMetricValue"] { 
+        color: #E0E0E0 !important; 
+        font-size: 2rem !important; 
+    }
 
+    /* Historique */
     .history-card {
-        background-color: #000000;
+        background-color: #0F0F0F;
         border-bottom: 1px solid #222;
-        padding: 15px;
+        padding: 12px;
+        color: #AAAAAA;
         font-family: 'Courier New', monospace;
     }
 
-    .stFileUploader { border: 1px dashed #444; border-radius: 0px; }
+    /* Barre de défilement adoucie */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #0F0F0F; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIQUE MUSICALE ---
+# --- LOGIQUE ANALYSE ---
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 
@@ -78,7 +97,6 @@ def get_camelot(key):
     return camelot_map.get(f"{key} minor", "12A")
 
 def analyze_audio(file):
-    # Librosa charge presque tout grâce au backend 'audioread'
     y, sr = librosa.load(file, duration=45, offset=30)
     y_harm = librosa.effects.hpss(y)[0]
     chroma = librosa.feature.chroma_cqt(y=y_harm, sr=sr)
@@ -93,13 +111,11 @@ def analyze_audio(file):
     return res_key, int(tempo)
 
 # --- INTERFACE ---
-st.markdown("<h1>RICARDODJ_228 KEY ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER</h1>", unsafe_allow_html=True)
 
-# Accepter tous les types de fichiers audio
-uploaded_file = st.file_uploader("DROP ANY AUDIO FILE (MP3, WAV, FLAC, M4A, OGG, AIFF...)", type=None)
+uploaded_file = st.file_uploader("", type=None)
 
 if uploaded_file:
-    # Nettoyage automatique du titre (enlève l'extension peu importe sa longueur)
     raw_name = uploaded_file.name
     clean_name = os.path.splitext(raw_name)[0].replace("_", " ").replace("-", " ").upper()
     
@@ -107,7 +123,7 @@ if uploaded_file:
     title_placeholder.markdown(f'<div class="track-title analyzing">{clean_name}</div>', unsafe_allow_html=True)
 
     try:
-        with st.spinner("DECODING UNIVERSAL AUDIO..."):
+        with st.spinner("Decoding audio..."):
             key, bpm = analyze_audio(uploaded_file)
             camelot = get_camelot(key)
             
@@ -117,27 +133,17 @@ if uploaded_file:
 
         title_placeholder.markdown(f'<div class="track-title">{clean_name}</div>', unsafe_allow_html=True)
 
-        # Dashboard
         c1, c2, c3 = st.columns(3)
         c1.metric("KEY", f"{key}M")
         c2.metric("CAMELOT", camelot)
         c3.metric("TEMPO", f"{bpm} BPM")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        # Lecture audio (certains navigateurs ne lisent pas nativement le FLAC ou AIFF, 
-        # mais Streamlit essaiera de l'intégrer au mieux)
         st.audio(uploaded_file)
 
     except Exception as e:
-        st.error(f"Erreur de lecture : Ce format de fichier est corrompu ou non supporté par le serveur.")
+        st.error("Format non supporté ou fichier corrompu.")
 
-# --- HISTORIQUE ---
 st.divider()
 st.markdown("### SESSION LOG")
 if st.session_state.history:
     for item in st.session_state.history:
-        st.markdown(f"""
-            <div class="history-card">
-                {item['time']} | {item['name']} | {item['key']}M | {item['camelot']} | {item['bpm']} BPM
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="history-card">{item["time"]} | {item["name"]} | {item["key"]}M | {item["camelot"]} | {item["bpm"]} BPM</div>', unsafe_allow_html=True)
