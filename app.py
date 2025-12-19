@@ -20,7 +20,7 @@ st.markdown("""
     h1 {
         font-family: 'Playfair Display', serif;
         font-weight: 900;
-        color: #3D2B1F; /* Brun profond */
+        color: #3D1B6F; /* Brun profond */
         text-align: center;
         padding-top: 20px;
     }
