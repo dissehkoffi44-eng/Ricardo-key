@@ -4,9 +4,10 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 import datetime
+import os
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Amapiano Master | Monochrome", page_icon="⚫", layout="wide")
+st.set_page_config(page_title="Amapiano Master | Universal", page_icon="⚫", layout="wide")
 
 if 'history' not in st.session_state:
     st.session_state['history'] = []
@@ -16,7 +17,6 @@ st.markdown("""
     <style>
     .stApp { background-color: #000000; color: #FFFFFF; }
     
-    /* Titre Application */
     h1 {
         font-family: 'Inter', sans-serif;
         font-weight: 200;
@@ -27,7 +27,13 @@ st.markdown("""
         padding-bottom: 20px;
     }
 
-    /* BLOC TITRE DE LA CHANSON (Focus de votre demande) */
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.3; }
+        100% { opacity: 1; }
+    }
+    .analyzing { animation: pulse 1.5s infinite; }
+
     .track-title {
         font-family: 'Inter', sans-serif;
         font-size: 2.5rem !important;
@@ -39,9 +45,9 @@ st.markdown("""
         line-height: 1.2;
         border: 2px solid #FFFFFF;
         padding: 20px;
+        word-wrap: break-word;
     }
 
-    /* Cartes de résultats */
     div[data-testid="stMetric"] {
         background-color: #000000;
         border: 1px solid #FFFFFF;
@@ -52,26 +58,14 @@ st.markdown("""
     div[data-testid="stMetricLabel"] { color: #888888 !important; letter-spacing: 2px; }
     div[data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2.5rem !important; }
 
-    /* Historique Style Minimaliste */
     .history-card {
         background-color: #000000;
         border-bottom: 1px solid #222;
         padding: 15px;
         font-family: 'Courier New', monospace;
-        font-size: 0.9rem;
     }
 
-    /* Upload box */
     .stFileUploader { border: 1px dashed #444; border-radius: 0px; }
-    
-    /* Bouton Export */
-    .stButton>button {
-        background-color: #FFFFFF;
-        color: #000000;
-        border-radius: 0px;
-        font-weight: bold;
-        border: none;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -84,6 +78,7 @@ def get_camelot(key):
     return camelot_map.get(f"{key} minor", "12A")
 
 def analyze_audio(file):
+    # Librosa charge presque tout grâce au backend 'audioread'
     y, sr = librosa.load(file, duration=45, offset=30)
     y_harm = librosa.effects.hpss(y)[0]
     chroma = librosa.feature.chroma_cqt(y=y_harm, sr=sr)
@@ -98,33 +93,43 @@ def analyze_audio(file):
     return res_key, int(tempo)
 
 # --- INTERFACE ---
-st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>AMAPIANO ANALYZER</h1>", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
+# Accepter tous les types de fichiers audio
+uploaded_file = st.file_uploader("DROP ANY AUDIO FILE (MP3, WAV, FLAC, M4A, OGG, AIFF...)", type=None)
 
 if uploaded_file:
-    # Nettoyage du nom de fichier pour un affichage propre
-    clean_name = uploaded_file.name.replace(".mp3", "").replace(".wav", "").replace(".flac", "").replace("_", " ").upper()
+    # Nettoyage automatique du titre (enlève l'extension peu importe sa longueur)
+    raw_name = uploaded_file.name
+    clean_name = os.path.splitext(raw_name)[0].replace("_", " ").replace("-", " ").upper()
     
-    # AFFICHAGE DU TITRE EN GROS
-    st.markdown(f'<div class="track-title">{clean_name}</div>', unsafe_allow_html=True)
+    title_placeholder = st.empty()
+    title_placeholder.markdown(f'<div class="track-title analyzing">{clean_name}</div>', unsafe_allow_html=True)
 
-    with st.spinner("ANALYSING FREQUENCIES..."):
-        key, bpm = analyze_audio(uploaded_file)
-        camelot = get_camelot(key)
-        
-        entry = {"time": datetime.datetime.now().strftime("%H:%M"), "name": clean_name, "key": key, "camelot": camelot, "bpm": bpm}
-        if not st.session_state.history or st.session_state.history[0]['name'] != entry['name']:
-            st.session_state.history.insert(0, entry)
+    try:
+        with st.spinner("DECODING UNIVERSAL AUDIO..."):
+            key, bpm = analyze_audio(uploaded_file)
+            camelot = get_camelot(key)
+            
+            entry = {"time": datetime.datetime.now().strftime("%H:%M"), "name": clean_name, "key": key, "camelot": camelot, "bpm": bpm}
+            if not st.session_state.history or st.session_state.history[0]['name'] != entry['name']:
+                st.session_state.history.insert(0, entry)
 
-    # Dashboard
-    c1, c2, c3 = st.columns(3)
-    c1.metric("KEY", f"{key}M")
-    c2.metric("CAMELOT", camelot)
-    c3.metric("TEMPO", f"{bpm} BPM")
+        title_placeholder.markdown(f'<div class="track-title">{clean_name}</div>', unsafe_allow_html=True)
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
-    st.audio(uploaded_file)
+        # Dashboard
+        c1, c2, c3 = st.columns(3)
+        c1.metric("KEY", f"{key}M")
+        c2.metric("CAMELOT", camelot)
+        c3.metric("TEMPO", f"{bpm} BPM")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        # Lecture audio (certains navigateurs ne lisent pas nativement le FLAC ou AIFF, 
+        # mais Streamlit essaiera de l'intégrer au mieux)
+        st.audio(uploaded_file)
+
+    except Exception as e:
+        st.error(f"Erreur de lecture : Ce format de fichier est corrompu ou non supporté par le serveur.")
 
 # --- HISTORIQUE ---
 st.divider()
