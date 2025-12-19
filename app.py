@@ -4,84 +4,73 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 import datetime
-import io
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Amapiano Master | Monochrome", page_icon="⚫", layout="wide")
 
-# Initialisation de l'historique
 if 'history' not in st.session_state:
     st.session_state['history'] = []
 
 # --- STYLE CSS NOIR ET BLANC ---
 st.markdown("""
     <style>
-    /* Fond Noir Profond */
-    .stApp {
-        background-color: #000000;
-        color: #FFFFFF;
-    }
+    .stApp { background-color: #000000; color: #FFFFFF; }
     
-    /* Titres Blanc Pur */
-    h1, h2, h3 {
+    /* Titre Application */
+    h1 {
         font-family: 'Inter', sans-serif;
-        text-transform: uppercase;
-        letter-spacing: 2px;
+        font-weight: 200;
+        letter-spacing: 5px;
         color: #FFFFFF;
         text-align: center;
+        border-bottom: 1px solid #333;
+        padding-bottom: 20px;
     }
 
-    /* Cartes de résultats : Fond noir, bordure blanche */
-    div[data-testid="stMetric"] {
-        background-color: #000000;
+    /* BLOC TITRE DE LA CHANSON (Focus de votre demande) */
+    .track-title {
+        font-family: 'Inter', sans-serif;
+        font-size: 2.5rem !important;
+        font-weight: 800;
+        text-transform: uppercase;
+        color: #FFFFFF;
+        text-align: center;
+        margin: 40px 0;
+        line-height: 1.2;
         border: 2px solid #FFFFFF;
-        border-radius: 0px; /* Look angulaire plus moderne */
         padding: 20px;
     }
-    
-    div[data-testid="stMetricLabel"] {
-        color: #AAAAAA !important;
-        text-transform: uppercase;
-    }
-    
-    div[data-testid="stMetricValue"] {
-        color: #FFFFFF !important;
-        font-weight: 800;
-    }
 
-    /* Zone d'upload */
-    .stFileUploader {
-        border: 1px solid #333333;
+    /* Cartes de résultats */
+    div[data-testid="stMetric"] {
+        background-color: #000000;
+        border: 1px solid #FFFFFF;
         border-radius: 0px;
-        background-color: #0A0A0A;
+        padding: 25px;
     }
+    
+    div[data-testid="stMetricLabel"] { color: #888888 !important; letter-spacing: 2px; }
+    div[data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2.5rem !important; }
 
-    /* Historique Style "Terminal" */
+    /* Historique Style Minimaliste */
     .history-card {
         background-color: #000000;
-        border-bottom: 1px solid #333333;
+        border-bottom: 1px solid #222;
         padding: 15px;
-        font-family: 'Courier New', Courier, monospace;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
     }
 
-    /* Boutons */
+    /* Upload box */
+    .stFileUploader { border: 1px dashed #444; border-radius: 0px; }
+    
+    /* Bouton Export */
     .stButton>button {
         background-color: #FFFFFF;
         color: #000000;
         border-radius: 0px;
         font-weight: bold;
-        width: 100%;
-    }
-    
-    .stButton>button:hover {
-        background-color: #CCCCCC;
         border: none;
-    }
-    
-    /* Divider blanc */
-    hr {
-        border: 0;
-        border-top: 1px solid #FFFFFF;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -109,53 +98,41 @@ def analyze_audio(file):
     return res_key, int(tempo)
 
 # --- INTERFACE ---
-st.markdown("<h1>⚫ AMAPIANO ANALYZER PRO</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #666;'>SYSTEM READY // UPLOAD TRACK</p>", unsafe_allow_html=True)
+st.markdown("<h1>AMAPIANO ANALYZER</h1>", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
 
 if uploaded_file:
-    with st.spinner("PROCESSING..."):
+    # Nettoyage du nom de fichier pour un affichage propre
+    clean_name = uploaded_file.name.replace(".mp3", "").replace(".wav", "").replace(".flac", "").replace("_", " ").upper()
+    
+    # AFFICHAGE DU TITRE EN GROS
+    st.markdown(f'<div class="track-title">{clean_name}</div>', unsafe_allow_html=True)
+
+    with st.spinner("ANALYSING FREQUENCIES..."):
         key, bpm = analyze_audio(uploaded_file)
         camelot = get_camelot(key)
         
-        # Enregistrement historique
-        entry = {
-            "time": datetime.datetime.now().strftime("%H:%M:%S"),
-            "name": uploaded_file.name[:30],
-            "key": key,
-            "camelot": camelot,
-            "bpm": bpm
-        }
+        entry = {"time": datetime.datetime.now().strftime("%H:%M"), "name": clean_name, "key": key, "camelot": camelot, "bpm": bpm}
         if not st.session_state.history or st.session_state.history[0]['name'] != entry['name']:
             st.session_state.history.insert(0, entry)
 
-    # Dashboard actuel
-    st.markdown("<br>", unsafe_allow_html=True)
+    # Dashboard
     c1, c2, c3 = st.columns(3)
-    c1.metric("KEY", f"{key}m")
+    c1.metric("KEY", f"{key}M")
     c2.metric("CAMELOT", camelot)
     c3.metric("TEMPO", f"{bpm} BPM")
 
-# --- HISTORIQUE TERMINAL ---
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("### 💾 SESSION HISTORY")
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.audio(uploaded_file)
 
+# --- HISTORIQUE ---
+st.divider()
+st.markdown("### SESSION LOG")
 if st.session_state.history:
-    # Option Export CSV
-    df = pd.DataFrame(st.session_state.history)
-    csv = df.to_csv(index=False).encode('utf-8')
-    st.download_button("EXPORT LOG (.CSV)", csv, "track_log.csv", "text/csv")
-    
-    if st.button("CLEAR LOG"):
-        st.session_state.history = []
-        st.rerun()
-
     for item in st.session_state.history:
         st.markdown(f"""
             <div class="history-card">
-                [{item['time']}] {item['name']} >> {item['key']}m // {item['camelot']} // {item['bpm']} BPM
+                {item['time']} | {item['name']} | {item['key']}M | {item['camelot']} | {item['bpm']} BPM
             </div>
         """, unsafe_allow_html=True)
-else:
-    st.markdown("<p style='text-align: center; color: #333;'>NO DATA LOGGED</p>", unsafe_allow_html=True)
