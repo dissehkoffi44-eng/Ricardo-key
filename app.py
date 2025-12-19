@@ -110,7 +110,7 @@ def analyze_audio(file):
         return None, None
 
 # --- INTERFACE UTILISATEUR ---
-st.markdown("<h1>AMAPIANO ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER</h1>", unsafe_allow_html=True)
 
 # Accepte tout type de fichier
 uploaded_file = st.file_uploader("GLISSEZ VOTRE FICHIER AUDIO (MP3, WAV, M4A, FLAC...)", type=None)
