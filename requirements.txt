@@ -2,3 +2,5 @@ streamlit
 librosa
 numpy
 pandas
+soundfile
+audioread
