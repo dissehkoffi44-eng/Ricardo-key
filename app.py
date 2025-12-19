@@ -106,7 +106,7 @@ st.markdown("<p style='text-align: center; color: #5D1037; font-style: italic;'>
 file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
 
 if file:
-    with st.spinner("Analyse des fréquences boisées..."):
+    with st.spinner("Analyse des fréquences en cours..."):
         y_full, sr = librosa.load(file)
         duration_mins = int(librosa.get_duration(y=y_full, sr=sr) // 60)
         
