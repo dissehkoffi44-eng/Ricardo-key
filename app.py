@@ -99,7 +99,7 @@ def analyze_segment(y_segment, sr):
     return (res_key, res_mode)
 
 # --- HEADER ---
-st.markdown("<h1>DJ-RICARDO228 KEY ANALYSER PREMIUM Edition</h1>", unsafe_allow_html=True)
+st.markdown("<h1>RICARDODJ_228 KEY ANALYSER PREMIUM Edition</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: #5D4037; font-style: italic;'>Analyse organique et précise de vos productions.</p>", unsafe_allow_html=True)
 
 # Zone de dépôt
