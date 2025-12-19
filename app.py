@@ -4,91 +4,78 @@ import numpy as np
 import pandas as pd
 from collections import Counter
 import datetime
-import os
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Amapiano Master | Soft Mode", page_icon="⚫", layout="wide")
+st.set_page_config(page_title="Amapiano Master | Monochrome", page_icon="⚫", layout="wide")
 
 if 'history' not in st.session_state:
     st.session_state['history'] = []
 
-# --- STYLE CSS ADOUCI (Anti-Fatigue) ---
+# --- STYLE CSS NOIR ET BLANC ---
 st.markdown("""
     <style>
-    /* Fond Noir Adouci */
-    .stApp {
-        background-color: #0F0F0F;
-        color: #E0E0E0;
-    }
+    .stApp { background-color: #000000; color: #FFFFFF; }
     
-    /* Titre Gris Clair */
+    /* Titre Application */
     h1 {
         font-family: 'Inter', sans-serif;
-        font-weight: 300;
-        letter-spacing: 4px;
-        color: #E0E0E0;
+        font-weight: 200;
+        letter-spacing: 5px;
+        color: #FFFFFF;
         text-align: center;
-        border-bottom: 1px solid #222;
+        border-bottom: 1px solid #333;
         padding-bottom: 20px;
     }
 
-    /* Animation Pulse discrète */
-    @keyframes pulse {
-        0% { opacity: 0.8; }
-        50% { opacity: 0.4; }
-        100% { opacity: 0.8; }
-    }
-    .analyzing { animation: pulse 2s infinite; }
-
-    /* Titre de la track en blanc cassé */
+    /* BLOC TITRE DE LA CHANSON (Focus de votre demande) */
     .track-title {
         font-family: 'Inter', sans-serif;
-        font-size: 2.2rem !important;
-        font-weight: 700;
+        font-size: 2.5rem !important;
+        font-weight: 800;
         text-transform: uppercase;
-        color: #E0E0E0;
+        color: #FFFFFF;
         text-align: center;
-        margin: 30px 0;
-        border: 1px solid #333;
-        padding: 25px;
-        background-color: #151515;
-    }
-
-    /* Metrics : Bordures grises et fond sombre */
-    div[data-testid="stMetric"] {
-        background-color: #121212;
-        border: 1px solid #333;
-        border-radius: 4px;
+        margin: 40px 0;
+        line-height: 1.2;
+        border: 2px solid #FFFFFF;
         padding: 20px;
     }
-    
-    div[data-testid="stMetricLabel"] { 
-        color: #888888 !important; 
-        font-size: 0.9rem !important;
-    }
-    
-    div[data-testid="stMetricValue"] { 
-        color: #E0E0E0 !important; 
-        font-size: 2rem !important; 
-    }
 
-    /* Historique */
+    /* Cartes de résultats */
+    div[data-testid="stMetric"] {
+        background-color: #000000;
+        border: 1px solid #FFFFFF;
+        border-radius: 0px;
+        padding: 25px;
+    }
+    
+    div[data-testid="stMetricLabel"] { color: #888888 !important; letter-spacing: 2px; }
+    div[data-testid="stMetricValue"] { color: #FFFFFF !important; font-size: 2.5rem !important; }
+
+    /* Historique Style Minimaliste */
     .history-card {
-        background-color: #0F0F0F;
+        background-color: #000000;
         border-bottom: 1px solid #222;
-        padding: 12px;
-        color: #AAAAAA;
+        padding: 15px;
         font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
     }
 
-    /* Barre de défilement adoucie */
-    ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-track { background: #0F0F0F; }
-    ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    /* Upload box */
+    .stFileUploader { border: 1px dashed #444; border-radius: 0px; }
+    
+    /* Bouton Export */
+    .stButton>button {
+        background-color: #FFFFFF;
+        color: #000000;
+        border-radius: 0px;
+        font-weight: bold;
+        border: none;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- LOGIQUE ANALYSE ---
+# --- LOGIQUE MUSICALE ---
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 
@@ -111,39 +98,41 @@ def analyze_audio(file):
     return res_key, int(tempo)
 
 # --- INTERFACE ---
-st.markdown("<h1>RICARDO_DJ228 KEY ANALYZER</h1>", unsafe_allow_html=True)
+st.markdown("<h1>AMAPIANO ANALYZER</h1>", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("", type=None)
+uploaded_file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
 
 if uploaded_file:
-    raw_name = uploaded_file.name
-    clean_name = os.path.splitext(raw_name)[0].replace("_", " ").replace("-", " ").upper()
+    # Nettoyage du nom de fichier pour un affichage propre
+    clean_name = uploaded_file.name.replace(".mp3", "").replace(".wav", "").replace(".flac", "").replace("_", " ").upper()
     
-    title_placeholder = st.empty()
-    title_placeholder.markdown(f'<div class="track-title analyzing">{clean_name}</div>', unsafe_allow_html=True)
+    # AFFICHAGE DU TITRE EN GROS
+    st.markdown(f'<div class="track-title">{clean_name}</div>', unsafe_allow_html=True)
 
-    try:
-        with st.spinner("Decoding audio..."):
-            key, bpm = analyze_audio(uploaded_file)
-            camelot = get_camelot(key)
-            
-            entry = {"time": datetime.datetime.now().strftime("%H:%M"), "name": clean_name, "key": key, "camelot": camelot, "bpm": bpm}
-            if not st.session_state.history or st.session_state.history[0]['name'] != entry['name']:
-                st.session_state.history.insert(0, entry)
+    with st.spinner("ANALYSING FREQUENCIES..."):
+        key, bpm = analyze_audio(uploaded_file)
+        camelot = get_camelot(key)
+        
+        entry = {"time": datetime.datetime.now().strftime("%H:%M"), "name": clean_name, "key": key, "camelot": camelot, "bpm": bpm}
+        if not st.session_state.history or st.session_state.history[0]['name'] != entry['name']:
+            st.session_state.history.insert(0, entry)
 
-        title_placeholder.markdown(f'<div class="track-title">{clean_name}</div>', unsafe_allow_html=True)
+    # Dashboard
+    c1, c2, c3 = st.columns(3)
+    c1.metric("KEY", f"{key}M")
+    c2.metric("CAMELOT", camelot)
+    c3.metric("TEMPO", f"{bpm} BPM")
 
-        c1, c2, c3 = st.columns(3)
-        c1.metric("KEY", f"{key}M")
-        c2.metric("CAMELOT", camelot)
-        c3.metric("TEMPO", f"{bpm} BPM")
-        st.audio(uploaded_file)
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.audio(uploaded_file)
 
-    except Exception as e:
-        st.error("Format non supporté ou fichier corrompu.")
-
+# --- HISTORIQUE ---
 st.divider()
 st.markdown("### SESSION LOG")
 if st.session_state.history:
     for item in st.session_state.history:
-        st.markdown(f'<div class="history-card">{item["time"]} | {item["name"]} | {item["key"]}M | {item["camelot"]} | {item["bpm"]} BPM</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class="history-card">
+                {item['time']} | {item['name']} | {item['key']}M | {item['camelot']} | {item['bpm']} BPM
+            </div>
+        """, unsafe_allow_html=True)
