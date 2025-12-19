@@ -6,7 +6,7 @@ from collections import Counter
 import time
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Amapiano Master | Wood Edition", page_icon="🪵", layout="wide")
+st.set_page_config(page_title="DJ-RICARDO228 KEY ANALYSER PREMIUM Edition", page_icon="🪵", layout="wide")
 
 # CSS Personnalisé : Thème Boisé & Blanc
 st.markdown("""
