@@ -3,154 +3,159 @@ import librosa
 import numpy as np
 import pandas as pd
 from collections import Counter
-import time
+import datetime
+import io
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="DJ-RICARDO228 KEY ANALYSER PREMIUM Edition", page_icon="🪵", layout="wide")
+st.set_page_config(page_title="Amapiano Master | Monochrome", page_icon="⚫", layout="wide")
 
-# CSS Personnalisé : Thème Boisé & Blanc
+# Initialisation de l'historique
+if 'history' not in st.session_state:
+    st.session_state['history'] = []
+
+# --- STYLE CSS NOIR ET BLANC ---
 st.markdown("""
     <style>
-    /* Fond principal : Couleur crème/blanc cassé */
+    /* Fond Noir Profond */
     .stApp {
-        background-color: #F9F7F2;
+        background-color: #000000;
+        color: #FFFFFF;
     }
     
-    /* Titre principal avec dégradé boisé */
-    h1 {
-        font-family: 'Playfair Display', serif;
-        font-weight: 900;
-        color: #3D2B1F; /* Brun profond */
+    /* Titres Blanc Pur */
+    h1, h2, h3 {
+        font-family: 'Inter', sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: #FFFFFF;
         text-align: center;
-        padding-top: 20px;
     }
-    
-    /* Cartes de résultats : Blanc pur sur fond crème */
+
+    /* Cartes de résultats : Fond noir, bordure blanche */
     div[data-testid="stMetric"] {
-        background-color: #FFFFFF;
-        border: 1px solid #E0D7C6;
-        border-left: 5px solid #5D4037; /* Accent bois sombre */
-        border-radius: 12px;
+        background-color: #000000;
+        border: 2px solid #FFFFFF;
+        border-radius: 0px; /* Look angulaire plus moderne */
         padding: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
     
-    /* Style du texte des métriques */
     div[data-testid="stMetricLabel"] {
-        color: #8D6E63 !important;
-        font-weight: bold;
+        color: #AAAAAA !important;
+        text-transform: uppercase;
     }
     
     div[data-testid="stMetricValue"] {
-        color: #3D2B1F !important;
+        color: #FFFFFF !important;
+        font-weight: 800;
     }
 
     /* Zone d'upload */
     .stFileUploader {
-        background-color: #FFFFFF;
-        border: 2px dashed #D7CCC8;
-        border-radius: 15px;
+        border: 1px solid #333333;
+        border-radius: 0px;
+        background-color: #0A0A0A;
     }
 
-    /* Boutons et éléments interactifs */
+    /* Historique Style "Terminal" */
+    .history-card {
+        background-color: #000000;
+        border-bottom: 1px solid #333333;
+        padding: 15px;
+        font-family: 'Courier New', Courier, monospace;
+    }
+
+    /* Boutons */
     .stButton>button {
-        background-color: #5D4037;
-        color: white;
-        border-radius: 8px;
+        background-color: #FFFFFF;
+        color: #000000;
+        border-radius: 0px;
+        font-weight: bold;
+        width: 100%;
+    }
+    
+    .stButton>button:hover {
+        background-color: #CCCCCC;
         border: none;
     }
-
-    /* Alertes et Info */
-    .stInfo {
-        background-color: #EFEBE9;
-        color: #4E342E;
-        border: 1px solid #D7CCC8;
+    
+    /* Divider blanc */
+    hr {
+        border: 0;
+        border-top: 1px solid #FFFFFF;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # --- LOGIQUE MUSICALE ---
 NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88]
 MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
 
-def get_camelot(key, mode):
-    camelot_map = {
-        'G# minor': '1A', 'Ab minor': '1A', 'B major': '1B', 'D# minor': '2A', 'Eb minor': '2A', 'F# major': '2B',
-        'Bb minor': '3A', 'Db major': '3B', 'F minor': '4A', 'Ab major': '4B', 'C minor': '5A', 'Eb major': '5B',
-        'G minor': '6A', 'Bb major': '6B', 'D minor': '7A', 'F major': '7B', 'A minor': '8A', 'C major': '8B',
-        'E minor': '9A', 'G major': '9B', 'B minor': '10A', 'D major': '10B', 'F# minor': '11A', 'A major': '11B',
-        'C# minor': '12A', 'E major': '12B'
-    }
-    return camelot_map.get(f"{key} {mode}", "1A")
+def get_camelot(key):
+    camelot_map = {'G# minor': '1A', 'D# minor': '2A', 'Bb minor': '3A', 'F minor': '4A', 'C minor': '5A', 'G minor': '6A', 'D minor': '7A', 'A minor': '8A', 'E minor': '9A', 'B minor': '10A', 'F# minor': '11A', 'C# minor': '12A'}
+    return camelot_map.get(f"{key} minor", "12A")
 
-def analyze_segment(y_segment, sr):
-    if len(y_segment) < sr: return None
-    y_harm = librosa.effects.hpss(y_segment)[0]
+def analyze_audio(file):
+    y, sr = librosa.load(file, duration=45, offset=30)
+    y_harm = librosa.effects.hpss(y)[0]
     chroma = librosa.feature.chroma_cqt(y=y_harm, sr=sr)
     chroma_avg = np.mean(chroma, axis=1)
     best_score = -1
-    res_key, res_mode = "", ""
+    res_key = ""
     for i in range(12):
-        for mode, profile in [("major", MAJOR_PROFILE), ("minor", MINOR_PROFILE)]:
-            score = np.corrcoef(chroma_avg, np.roll(profile, i))[0, 1]
-            if score > best_score:
-                best_score, res_key, res_mode = score, NOTES[i], mode
-    return (res_key, res_mode)
+        score = np.corrcoef(chroma_avg, np.roll(MINOR_PROFILE, i))[0, 1]
+        if score > best_score:
+            best_score, res_key = score, NOTES[i]
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    return res_key, int(tempo)
 
-# --- HEADER ---
-st.markdown("<h1>RICARDODJ_228 KEY ANALYSER PREMIUM Edition</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #5D4037; font-style: italic;'>Analyse organique et précise de vos productions.</p>", unsafe_allow_html=True)
+# --- INTERFACE ---
+st.markdown("<h1>⚫ AMAPIANO ANALYZER PRO</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #666;'>SYSTEM READY // UPLOAD TRACK</p>", unsafe_allow_html=True)
 
-# Zone de dépôt
-file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
+uploaded_file = st.file_uploader("", type=['mp3', 'wav', 'flac'])
 
-if file:
-    with st.spinner("Analyse des fréquences boisées..."):
-        y_full, sr = librosa.load(file)
-        duration_mins = int(librosa.get_duration(y=y_full, sr=sr) // 60)
+if uploaded_file:
+    with st.spinner("PROCESSING..."):
+        key, bpm = analyze_audio(uploaded_file)
+        camelot = get_camelot(key)
         
-        segment_results = []
-        # Analyse minute par minute
-        for m in range(min(duration_mins, 8)):
-            start_sample = m * 60 * sr
-            end_sample = (m + 1) * 60 * sr
-            res = analyze_segment(y_full[start_sample:end_sample], sr)
-            if res: segment_results.append(res)
-        
-        votes = [f"{k} {m}" for k, m in segment_results]
-        final_res = Counter(votes).most_common(1)[0][0]
-        final_key, final_mode = final_res.split()
-        
-        tempo, _ = librosa.beat.beat_track(y=y_full, sr=sr)
-        camelot = get_camelot(final_key, final_mode)
+        # Enregistrement historique
+        entry = {
+            "time": datetime.datetime.now().strftime("%H:%M:%S"),
+            "name": uploaded_file.name[:30],
+            "key": key,
+            "camelot": camelot,
+            "bpm": bpm
+        }
+        if not st.session_state.history or st.session_state.history[0]['name'] != entry['name']:
+            st.session_state.history.insert(0, entry)
 
-        # AFFICHAGE RÉSULTATS
-        st.markdown("<br>", unsafe_allow_html=True)
-        c1, c2, c3 = st.columns(3)
-        c1.metric("TONALITÉ", f"{final_key} {final_mode.upper()}")
-        c2.metric("NOTATION CAMELOT", camelot)
-        c3.metric("TEMPO", f"{int(tempo)} BPM")
+    # Dashboard actuel
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    c1.metric("KEY", f"{key}m")
+    c2.metric("CAMELOT", camelot)
+    c3.metric("TEMPO", f"{bpm} BPM")
 
-        # --- SECTION AUDIO ---
-        st.divider()
-        st.markdown("<h3 style='color: #3D2B1F;'>🔊 Studio de Contrôle</h3>", unsafe_allow_html=True)
-        
-        v1, v2 = st.columns(2)
-        with v1:
-            st.markdown("**Fichier Audio**")
-            st.audio(file)
-        with v2:
-            st.markdown(f"**Note Témoin ({final_key})**")
-            note_freqs = {'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88}
-            freq = note_freqs.get(final_key, 440.0)
-            t = np.linspace(0, 3, int(22050 * 3), False)
-            tone = 0.5 * np.sin(2 * np.pi * freq * t)
-            st.audio(tone, sample_rate=22050)
+# --- HISTORIQUE TERMINAL ---
+st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("### 💾 SESSION HISTORY")
 
-        # --- CONSEILS ---
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info(f"🌿 **Conseil Harmonique :** Votre morceau en **{final_key} {final_mode}** se mariera parfaitement avec des pistes en **{camelot}**. Pour une montée en énergie douce, essayez la clé suivante sur la roue Camelot.")
+if st.session_state.history:
+    # Option Export CSV
+    df = pd.DataFrame(st.session_state.history)
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button("EXPORT LOG (.CSV)", csv, "track_log.csv", "text/csv")
+    
+    if st.button("CLEAR LOG"):
+        st.session_state.history = []
+        st.rerun()
 
+    for item in st.session_state.history:
+        st.markdown(f"""
+            <div class="history-card">
+                [{item['time']}] {item['name']} >> {item['key']}m // {item['camelot']} // {item['bpm']} BPM
+            </div>
+        """, unsafe_allow_html=True)
 else:
-    st.markdown("<br><br><p style='text-align: center; color: #D7CCC8;'>En attente d'un signal audio...</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #333;'>NO DATA LOGGED</p>", unsafe_allow_html=True)
