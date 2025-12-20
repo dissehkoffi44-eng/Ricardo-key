@@ -2,3 +2,6 @@ streamlit
 librosa
 numpy
 pandas
+plotly
+mutagen
+soundfile
