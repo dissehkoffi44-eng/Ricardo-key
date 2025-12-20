@@ -17,7 +17,7 @@ except ImportError:
     MUTAGEN_AVAILABLE = False
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Ricardo_DJ228 | Precision V4.8 Pro Hybrid", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="Ricardo_DJ228 | V4.8 Hybrid Pro", page_icon="🎧", layout="wide")
 
 if 'history' not in st.session_state:
     st.session_state.history = []
@@ -30,12 +30,11 @@ st.markdown("""
     .metric-container:hover { transform: translateY(-5px); border-color: #6366F1; }
     .label-custom { color: #666; font-size: 0.9em; font-weight: bold; margin-bottom: 5px; }
     .value-custom { font-size: 1.6em; font-weight: 800; color: #1A1A1A; }
-    .status-badge { font-size: 0.8em; padding: 2px 8px; border-radius: 10px; font-weight: bold; margin-top: 5px; display: inline-block; }
     .diag-box { text-align:center; padding:10px; border-radius:10px; border:1px solid #EEE; background: white; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MOTEUR AUDIO JS (TÉMOIN SONORE) ---
+# --- MOTEUR AUDIO JS ---
 def get_sine_witness(note_mode_str, key_suffix=""):
     parts = note_mode_str.split(' ')
     note = parts[0]
@@ -73,7 +72,7 @@ def get_sine_witness(note_mode_str, key_suffix=""):
     </script>
     """, height=40)
 
-# --- MAPPING CAMELOT (F# MINOR = 11A) ---
+# --- MAPPING CAMELOT ---
 BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
 BASE_CAMELOT_MAJOR = {'B':'1B','F#':'2B','Gb':'2B','Db':'3B','C#':'3B','Ab':'4B','G#':'4B','Eb':'5B','D#':'5B','Bb':'6B','A#':'6B','F':'7B','C':'8B','G':'9B','D':'10B','A':'11B','E':'12B'}
 
@@ -85,7 +84,6 @@ def get_camelot_pro(key_mode_str):
         else: return BASE_CAMELOT_MAJOR.get(key, "??")
     except: return "??"
 
-# --- FONCTION DE TAGGING ---
 def get_tagged_audio(file_buffer, key_val):
     if not MUTAGEN_AVAILABLE: return file_buffer
     try:
@@ -120,7 +118,7 @@ def analyze_segment(y, sr):
             if score > best_score: best_score, res_key = score, f"{NOTES[i]} {mode}"
     return res_key, best_score, chroma_avg
 
-@st.cache_data(show_spinner="Analyse spectrale V4.8...")
+@st.cache_data(show_spinner="Analyse hybride V4.8...")
 def get_full_analysis(file_buffer):
     y, sr = librosa.load(file_buffer)
     is_aligned = check_drum_alignment(y, sr)
@@ -146,7 +144,6 @@ def get_full_analysis(file_buffer):
             score = np.corrcoef(avg_chroma_global, np.roll(profile, i))[0, 1]
             if score > best_synth_score: best_synth_score, tonique_synth = score, f"{NOTES[i]} {mode}"
 
-    # --- CALCUL PURETÉ & KEY SHIFT (AJOUT V4.8) ---
     top_votes = Counter(votes).most_common(2)
     purity = int((top_votes[0][1] / len(votes)) * 100)
     key_shift_detected = True if len(top_votes) > 1 and (top_votes[1][1] / len(votes)) > 0.25 else False
@@ -158,13 +155,12 @@ def get_full_analysis(file_buffer):
 
     return {
         "vote": dominante_vote, "synthese": tonique_synth, "confidence": final_conf, "tempo": int(float(tempo)), 
-        "energy": energy, "timeline": timeline_data, "mode_label": "DIRECT" if is_aligned else "SÉPARÉ", 
-        "mode_color": "#E8F5E9" if is_aligned else "#E3F2FD", "purity": purity, 
-        "key_shift": key_shift_detected, "secondary": top_votes[1][0] if len(top_votes)>1 else None
+        "energy": energy, "timeline": timeline_data, "purity": purity, 
+        "key_shift": key_shift_detected, "secondary": top_votes[1][0] if len(top_votes)>1 else top_votes[0][0]
     }
 
 # --- INTERFACE ---
-st.markdown("<h1 style='text-align: center;'>🎧 RICARDO_DJ228 | V4.8 PRO ULTRA</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>🎧 RICARDO_DJ228 | V4.8 HYBRID PRO</h1>", unsafe_allow_html=True)
 tabs = st.tabs(["📁 ANALYSEUR", "🕒 HISTORIQUE"])
 
 with tabs[0]:
@@ -188,12 +184,23 @@ with tabs[0]:
                     st.markdown(f'<div class="metric-container" style="border-bottom: 4px solid #6366F1;"><div class="label-custom">SYNTHÈSE</div><div class="value-custom">{res["synthese"]}</div><div>{cam_final}</div></div>', unsafe_allow_html=True)
                     get_sine_witness(res["synthese"], "synth")
                     st.download_button(label="💾 EXPORT TAGGED MP3", data=get_tagged_audio(file, cam_final), file_name=f"[{cam_final}] {file.name}", mime="audio/mpeg")
+                
+                # --- RÉINTÉGRATION DU CODE 1 : PODIUM TOP CONFIANCE ---
+                df_timeline = pd.DataFrame(res['timeline'])
+                df_s = df_timeline.sort_values(by="Confiance", ascending=False).reset_index()
+                best_n = df_s.loc[0, 'Note']
+                sec_n = df_s[df_s['Note'] != best_n].iloc[0]['Note'] if not df_s[df_s['Note'] != best_n].empty else best_n
+                
                 with c3:
-                    st.markdown(f'<div class="metric-container"><div class="label-custom">CONFIANCE</div><div class="value-custom">{res["confidence"]}%</div><div>Stabilité: {res["purity"]}%</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="metric-container" style="border-bottom: 4px solid #F1C40F;"><div class="label-custom">TOP CONFIANCE</div><div style="font-size:0.85em; margin-top:5px;">🥇 {best_n} <b>({get_camelot_pro(best_n)})</b></div><div style="font-size:0.85em;">🥈 {sec_n} <b>({get_camelot_pro(sec_n)})</b></div></div>', unsafe_allow_html=True)
+                    col_t1, col_t2 = st.columns(2)
+                    with col_t1: get_sine_witness(best_n, "best")
+                    with col_t2: get_sine_witness(sec_n, "sec")
+                
                 with c4: 
                     st.markdown(f'<div class="metric-container"><div class="label-custom">BPM & ENERGIE</div><div class="value-custom">{res["tempo"]}</div><div>E: {res["energy"]}/10</div></div>', unsafe_allow_html=True)
 
-                # --- BLOC DIAGNOSTIC HARMONIQUE (AJOUT V4.8) ---
+                # --- BLOC DIAGNOSTIC HARMONIQUE (V4.8) ---
                 st.markdown("---")
                 d1, d2, d3 = st.columns([1, 1, 2])
                 with d1:
@@ -207,7 +214,7 @@ with tabs[0]:
                     if res['key_shift']: st.warning(f"Changement détecté vers : {res['secondary']} ({get_camelot_pro(res['secondary'])})")
                     else: st.success("Structure harmonique parfaite pour un mix long.")
 
-                st.plotly_chart(px.scatter(pd.DataFrame(res['timeline']), x="Temps", y="Note", color="Confiance", size="Confiance", template="plotly_white"), use_container_width=True)
+                st.plotly_chart(px.scatter(df_timeline, x="Temps", y="Note", color="Confiance", size="Confiance", template="plotly_white"), use_container_width=True)
 
 with tabs[1]:
     if st.session_state.history:
