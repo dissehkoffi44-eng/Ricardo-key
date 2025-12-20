@@ -127,7 +127,6 @@ def get_tagged_audio(file_buffer, key_val):
 # --- MOTEUR ANALYSE AVANCÉE V6.2 HYBRID ---
 
 def is_kick_tuned(y, sr, target_note):
-    """Vérifie si la fondamentale des basses (kick) correspond à la note dominante."""
     S = np.abs(librosa.stft(y, n_fft=4096))
     freqs = librosa.fft_frequencies(sr=sr, n_fft=4096)
     low_mask = (freqs > 30) & (freqs < 120)
@@ -135,18 +134,15 @@ def is_kick_tuned(y, sr, target_note):
     if len(mags) == 0: return False
     peak_freq = freqs[low_mask][np.argmax(mags)]
     note_det = librosa.hz_to_note(peak_freq)
-    # On nettoie le nom de la note (ex: C1 -> C)
     note_det_clean = "".join([i for i in note_det if not i.isdigit()])
     return note_det_clean in target_note
 
 def analyze_segment(y, sr, tuning=0.0):
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-    # Normalisation interne du segment
     y = librosa.util.normalize(y)
     chroma = librosa.feature.chroma_cens(y=y, sr=sr, hop_length=512, n_chroma=12, tuning=tuning)
     chroma_avg = np.mean(chroma, axis=1)
     
-    # Profils Mixed In Key Style (Poids ajustés)
     PROFILES = {
         "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88], 
         "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17], 
@@ -169,18 +165,12 @@ def get_full_analysis(file_buffer):
         file_buffer.seek(0)
         y, sr = librosa.load(io.BytesIO(file_buffer.read()), sr=None)
 
-    # 1. Estimation Tuning
     tuning_offset = librosa.estimate_tuning(y=y, sr=sr)
-
-    # 2. Pré-Analyse Rapide pour Tonalité (Downsampled)
     y_fast = librosa.resample(y, orig_sr=sr, target_sr=22050)
     temp_key, _, _ = analyze_segment(y_fast, 22050, tuning=tuning_offset)
 
-    # 3. Vérification Accordage Kick
     kick_ok = is_kick_tuned(y, sr, temp_key)
     
-    # 4. Stratégie de filtrage intelligente
-    # Si le kick n'est pas accordé à la mélodie, on utilise HPSS pour isoler l'harmonique
     if kick_ok:
         y_final = y
         filter_status = "Désactivé (Kick Accordé)"
@@ -201,7 +191,6 @@ def get_full_analysis(file_buffer):
     dominante_vote = Counter(votes).most_common(1)[0][0]
     avg_chroma_global = np.mean(all_chromas, axis=0)
     
-    # Synthèse finale (Correlation globale)
     PROFILES_S = {"major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88], "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]}
     best_synth_score, tonique_synth = -1, ""
     NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -275,8 +264,24 @@ with tabs[0]:
                         get_sine_witness(res["synthese"], f"synth_{fid}")
                         st.download_button(label="💾 MP3 TAGGÉ", data=get_tagged_audio(file_buffer, cam_final), file_name=f"[{cam_final}] {file_name}", mime="audio/mpeg", key=f"dl_{fid}")
                     
+                    # --- NOUVELLE CASE TOP CONFIANCE ---
+                    df_tl = pd.DataFrame(res['timeline'])
+                    df_s = df_tl.sort_values(by="Confiance", ascending=False).reset_index()
+                    best_n = df_s.loc[0, 'Note']
+                    second_n = df_s[df_s['Note'] != best_n].iloc[0]['Note'] if not df_s[df_s['Note'] != best_n].empty else best_n
+                    
                     with c3:
-                        st.markdown(f'<div class="metric-container" style="border-bottom: 4px solid #F1C40F;"><div class="label-custom">KICK STATUS</div><div style="font-size:0.85em; margin-top:5px; font-weight:bold;">{res["kick_analysis"]}</div><div style="font-size:0.8em; color:gray;">Pureté: {res["purity"]}%</div></div>', unsafe_allow_html=True)
+                        st.markdown(f"""
+                            <div class="metric-container" style="border-bottom: 4px solid #F1C40F;">
+                                <div class="label-custom">TOP CONFIANCE</div>
+                                <div style="font-size:0.85em; margin-top:5px;">🥇 {best_n} <b>({get_camelot_pro(best_n)})</b></div>
+                                <div style="font-size:0.85em;">🥈 {second_n} <b>({get_camelot_pro(second_n)})</b></div>
+                                <div style="font-size:0.75em; color:gray; margin-top:5px;">Pureté: {res['purity']}% | Kick: {res['kick_analysis']}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        ct1, ct2 = st.columns(2)
+                        with ct1: get_sine_witness(best_n, f"t1_{fid}")
+                        with ct2: get_sine_witness(second_n, f"t2_{fid}")
                     
                     with c4: st.markdown(f'<div class="metric-container"><div class="label-custom">BPM & ENERGIE</div><div class="value-custom">{res["tempo"]}</div><div>E: {res["energy"]}/10</div></div>', unsafe_allow_html=True)
 
