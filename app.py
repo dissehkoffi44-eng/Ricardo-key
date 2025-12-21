@@ -137,7 +137,6 @@ def analyze_segment(y, sr, tuning=0.0):
 
 @st.cache_data(show_spinner="Analyse Multi-Couches V6.1 Hybrid...", max_entries=20)
 def get_full_analysis(file_bytes, file_name):
-    # Ligne d'origine rétablie
     y, sr = librosa.load(io.BytesIO(file_bytes), sr=None, res_type='kaiser_fast')
 
     tuning_offset = librosa.estimate_tuning(y=y, sr=sr)
@@ -197,10 +196,34 @@ with tabs[0]:
                     res = get_full_analysis(f_bytes, f.name)
                     cam_val = get_camelot_pro(res['synthese'])
                     
+                    # Préparation des données de stabilité pour Telegram
+                    df_tl_tg = pd.DataFrame(res['timeline']).sort_values(by="Confiance", ascending=False).reset_index()
+                    n1_tg = df_tl_tg.loc[0, 'Note'] if not df_tl_tg.empty else "??"
+                    c1_tg = df_tl_tg.loc[0, 'Confiance'] if not df_tl_tg.empty else 0
+                    n2_tg = n1_tg
+                    c2_tg = 0
+                    if not df_tl_tg.empty:
+                        for idx, row in df_tl_tg.iterrows():
+                            if row['Note'] != n1_tg:
+                                n2_tg = row['Note']
+                                c2_tg = row['Confiance']
+                                break
+
+                    # Message Telegram enrichi
+                    tg_caption = (
+                        f"🎵 {f.name}\n"
+                        f"🥁 BPM: {res['tempo']}\n"
+                        f"🎯 DOMINANTE: {res['vote']} ({get_camelot_pro(res['vote'])})\n"
+                        f"🧬 SYNTHÈSE: {res['synthese']} ({cam_val}) - Confiance: {res['confidence']}%\n"
+                        f"⚖️ STABILITÉ:\n"
+                        f"   1️⃣ {n1_tg} ({get_camelot_pro(n1_tg)}) | Confiance: {c1_tg}%\n"
+                        f"   2️⃣ {n2_tg} ({get_camelot_pro(n2_tg)}) | Confiance: {c2_tg}%"
+                    )
+
                     success = upload_to_telegram(
                         io.BytesIO(f_bytes), 
                         f"[{cam_val}] {f.name}", 
-                        f"🎵 {f.name}\n🔑 Key: {cam_val}\n🥁 BPM: {res['tempo']}"
+                        tg_caption
                     )
                     res['saved_on_tg'] = success
                     st.session_state.processed_files[file_id] = res
@@ -226,11 +249,9 @@ with tabs[0]:
                     get_sine_witness(res["synthese"], f"synth_{fid}")
                     if res.get('saved_on_tg'): st.caption("✅ Backup envoyé sur Telegram")
                 with c3:
-                    # RÈGLES D'ORIGINE RÉTABLIES POUR LA STABILITÉ
                     df_tl = pd.DataFrame(res['timeline'])
                     df_s = df_tl.sort_values(by="Confiance", ascending=False).reset_index()
                     n1 = df_s.loc[0, 'Note'] if not df_s.empty else "??"
-                    # Recherche de la deuxième note différente dans la liste triée
                     n2 = n1
                     if not df_s.empty:
                         for idx, row in df_s.iterrows():
@@ -242,9 +263,8 @@ with tabs[0]:
                     st.markdown(f'<div class="metric-container"><div class="label-custom">BPM & ENERGIE</div><div class="value-custom">{res["tempo"]}</div><div>E: {res["energy"]}/10</div></div>', unsafe_allow_html=True)
 
                 st.markdown("---")
-                d1, d2, d3 = st.columns([1, 1, 2])
+                d1, d3 = st.columns([1, 2]) # Case Cerveau retirée ici
                 with d1: st.markdown(f"<div class='diag-box'><div class='label-custom'>PURETÉ</div><div style='color:{'#2ECC71' if res['purity'] > 75 else '#F1C40F'}; font-weight:bold;'>{res['purity']}%</div></div>", unsafe_allow_html=True)
-                with d2: st.markdown(f"<div class='diag-box'><div class='label-custom'>CERVEAU</div><div style='color:#6366F1; font-weight:bold;'>CENS V6.1 + TUNING</div></div>", unsafe_allow_html=True)
                 with d3:
                     if res['key_shift']: st.warning(f"Changement détecté : {res['secondary']}")
                     else: st.success("Structure harmonique parfaite.")
