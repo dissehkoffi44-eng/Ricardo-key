@@ -137,7 +137,7 @@ def analyze_segment(y, sr, tuning=0.0):
 
 @st.cache_data(show_spinner="Analyse Multi-Couches V6.1 Hybrid...", max_entries=20)
 def get_full_analysis(file_bytes, file_name):
-    # RESTAURATION DE TA LIGNE ORIGINALE (Nécessite resampy dans requirements.txt)
+    # Ligne d'origine rétablie
     y, sr = librosa.load(io.BytesIO(file_bytes), sr=None, res_type='kaiser_fast')
 
     tuning_offset = librosa.estimate_tuning(y=y, sr=sr)
@@ -226,10 +226,17 @@ with tabs[0]:
                     get_sine_witness(res["synthese"], f"synth_{fid}")
                     if res.get('saved_on_tg'): st.caption("✅ Backup envoyé sur Telegram")
                 with c3:
+                    # RÈGLES D'ORIGINE RÉTABLIES POUR LA STABILITÉ
                     df_tl = pd.DataFrame(res['timeline'])
-                    df_rank = df_tl.groupby('Note')['Confiance'].mean().sort_values(ascending=False).reset_index()
-                    n1 = df_rank.iloc[0]['Note'] if not df_rank.empty else "??"
-                    n2 = df_rank.iloc[1]['Note'] if len(df_rank) > 1 else n1
+                    df_s = df_tl.sort_values(by="Confiance", ascending=False).reset_index()
+                    n1 = df_s.loc[0, 'Note'] if not df_s.empty else "??"
+                    # Recherche de la deuxième note différente dans la liste triée
+                    n2 = n1
+                    if not df_s.empty:
+                        for idx, row in df_s.iterrows():
+                            if row['Note'] != n1:
+                                n2 = row['Note']
+                                break
                     st.markdown(f'<div class="metric-container" style="border-bottom: 4px solid #F1C40F;"><div class="label-custom">STABILITÉ</div><div style="font-size:0.85em; margin-top:5px;">🥇 {n1} <b>({get_camelot_pro(n1)})</b></div><div style="font-size:0.85em;">🥈 {n2} <b>({get_camelot_pro(n2)})</b></div></div>', unsafe_allow_html=True)
                 with c4: 
                     st.markdown(f'<div class="metric-container"><div class="label-custom">BPM & ENERGIE</div><div class="value-custom">{res["tempo"]}</div><div>E: {res["energy"]}/10</div></div>', unsafe_allow_html=True)
