@@ -1,9 +1,8 @@
 streamlit
 librosa
-numpy<2.0.0
+numpy
 pandas
 plotly
-mutagen
 requests
-soundfile
-resampy
+scipy
+kaleido==0.2.1
