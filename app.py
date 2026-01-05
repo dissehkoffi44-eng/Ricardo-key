@@ -158,15 +158,18 @@ if files:
     status_text = st.empty()
     results_container = st.container()
     
-    for idx, f in enumerate(files):
+    # Parcours inversé pour afficher les nouveaux fichiers en haut
+    for idx, f in reversed(list(enumerate(files))):
         status_text.text(f"Traitement {idx+1}/{total} : {f.name}...")
         fid = f"{f.name}_{f.size}"
         
+        # On rembobine le fichier pour la lecture
+        f.seek(0)
         f_bytes = f.read()
         data = get_full_analysis(f_bytes, f.name)
         
         if data and "error" not in data:
-            with results_container.expander(f"📊 {data['file_name']}", expanded=(total == 1)):
+            with results_container.expander(f"📊 {data['file_name']}", expanded=True):
                 st.markdown(f"""
                     <div class="final-decision-box" style="background:{data['rec']['bg']};">
                         <h1 style="font-size:4.5em; margin:0; font-weight:900;">{data['rec']['note']}</h1>
@@ -209,7 +212,7 @@ if files:
             except:
                 pass
 
-        prog_bar.progress((idx + 1) / total)
+        prog_bar.progress((total - idx) / total)
         del f_bytes, data
         gc.collect()
 
