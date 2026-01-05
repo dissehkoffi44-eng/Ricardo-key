@@ -52,7 +52,6 @@ def get_camelot_pro(key_mode_str):
     try:
         parts = key_mode_str.split(" ")
         key, mode = parts[0], parts[1].lower()
-        # Rappel : F# Minor est bien mappé sur 11A comme demandé
         return BASE_CAMELOT_MINOR.get(key, "??") if mode == 'minor' else BASE_CAMELOT_MAJOR.get(key, "??")
     except: return "??"
 
@@ -90,24 +89,21 @@ def get_sine_witness(note_mode_str, key_suffix=""):
 
 # --- COEUR DE L'ANALYSE (FULL 3 MIN OPTIMISÉ) ---
 
-@st.cache_data(show_spinner=False, max_entries=5) # Cache ultra-limité pour 70 fichiers
+@st.cache_data(show_spinner=False, max_entries=5)
 def get_full_analysis(file_bytes, file_name):
     try:
-        # ANALYSE SUR 180 SECONDES (3 MIN)
         y, sr = librosa.load(io.BytesIO(file_bytes), sr=22050, duration=180)
-        
         tuning = librosa.estimate_tuning(y=y, sr=sr)
         y_harm = librosa.effects.harmonic(y, margin=3.0)
         y_filt = apply_bandpass_filter(y_harm, sr)
         duration = librosa.get_duration(y=y, sr=sr)
 
-        # 1. Analyse Stabilité
         step, timeline = 8, []
         votes = Counter()
         for start in range(0, int(duration) - step, step):
             y_seg = y_filt[int(start*sr):int((start+step)*sr)]
             rms = np.mean(librosa.feature.rms(y=y_seg))
-            if rms < 0.005: continue # Ignore les silences
+            if rms < 0.005: continue 
             
             chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr, tuning=tuning)
             key, score = solve_key(np.mean(chroma, axis=1))
@@ -119,11 +115,9 @@ def get_full_analysis(file_bytes, file_name):
         df_tl = pd.DataFrame(timeline)
         note_solide = votes.most_common(1)[0][0]
 
-        # 2. Analyse de Résolution (Fin des 3 mins)
         y_end = y_harm[int(max(0, duration-8)*sr):]
         key_fin, score_fin = solve_key(np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1))
 
-        # 3. Arbitrage
         final_decision = note_solide
         is_res = False
         if score_fin > 0.75 and key_fin in [v[0] for v in votes.most_common(3)]:
@@ -146,7 +140,6 @@ def get_full_analysis(file_bytes, file_name):
             "plot_bytes": fig.to_image(format="png", width=800, height=400)
         }
         
-        # LIBÉRATION MÉMOIRE CRITIQUE
         del y, y_harm, y_filt, y_end, df_tl, chroma
         gc.collect()
         
@@ -163,15 +156,12 @@ if files:
     total = len(files)
     prog_bar = st.progress(0)
     status_text = st.empty()
-    
-    # Création d'un conteneur pour les résultats pour éviter de scroller pendant le calcul
     results_container = st.container()
     
     for idx, f in enumerate(files):
         status_text.text(f"Traitement {idx+1}/{total} : {f.name}...")
         fid = f"{f.name}_{f.size}"
         
-        # Lecture et Analyse
         f_bytes = f.read()
         data = get_full_analysis(f_bytes, f.name)
         
@@ -190,39 +180,40 @@ if files:
                 c1, c2, c3 = st.columns(3)
                 with c1: st.markdown(f'<div class="metric-container">BPM<br><span class="value-custom">{data["tempo"]}</span></div>', unsafe_allow_html=True)
                 with c2: get_sine_witness(data['rec']['note'], fid)
-                with c3:
-                    if st.button(f"🚀 ENVOYER RAPPORT", key=f"tg_{fid}"):
-                        total_seg = len(data['timeline'])
-                        main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
-                        stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
-                        
-                        cap = (
-                            f"✨ *RCDJ228 KEY7 ULTIMATE PRO*\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"📂 *FICHIER :* `{data['file_name']}`\n"
-                            f"⏱ *TEMPO :* `{data['tempo']} BPM`\n\n"
-                            f"🎹 *RÉSULTAT (ANALYSE 3 MIN)*\n"
-                            f"├─ Clé : `{data['rec']['note']}`\n"
-                            f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` \n"
-                            f"└─ Certitude : `{data['rec']['conf']}%` {'✅' if data['rec']['conf'] > 85 else '⚠️'}\n\n"
-                            f"📊 *STABILITÉ :* `{stability}%`\n"
-                            f"━━━━━━━━━━━━━━━━━━━━"
-                        )
-                        
-                        resp = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", 
-                                             files={'photo': data['plot_bytes']}, 
-                                             data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'Markdown'})
-                        if resp.status_code == 200: st.toast("Envoyé !")
-                        else: st.error("Erreur Telegram.")
+                with c3: st.info("Rapport auto-envoyé 🚀")
 
                 st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", template="plotly_dark"), use_container_width=True)
-        
-        # NETTOYAGE APRÈS CHAQUE FICHIER
+
+            # --- ENVOI AUTOMATIQUE TELEGRAM ---
+            try:
+                total_seg = len(data['timeline'])
+                main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
+                stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
+                
+                cap = (
+                    f"✨ *RCDJ228 KEY7 ULTIMATE PRO*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📂 *FICHIER :* `{data['file_name']}`\n"
+                    f"⏱ *TEMPO :* `{data['tempo']} BPM`\n\n"
+                    f"🎹 *RÉSULTAT (ANALYSE 3 MIN)*\n"
+                    f"├─ Clé : `{data['rec']['note']}`\n"
+                    f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` \n"
+                    f"└─ Certitude : `{data['rec']['conf']}%` {'✅' if data['rec']['conf'] > 85 else '⚠️'}\n\n"
+                    f"📊 *STABILITÉ :* `{stability}%`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━"
+                )
+                
+                requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", 
+                              files={'photo': data['plot_bytes']}, 
+                              data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'Markdown'})
+            except:
+                pass
+
         prog_bar.progress((idx + 1) / total)
         del f_bytes, data
         gc.collect()
 
-    status_text.text(f"✅ Analyse de {total} fichiers terminée.")
+    status_text.text(f"✅ Analyse et Envoi de {total} fichiers terminés.")
 
 if st.sidebar.button("🧹 VIDER LE CACHE"):
     st.cache_data.clear()
