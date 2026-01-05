@@ -15,7 +15,7 @@ TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "7751365982:AAFLbeRoPsDx5OyIOl
 CHAT_ID = st.secrets.get("CHAT_ID", "-1003602454394")
 
 # --- CONFIGURATION PAGE ---
-st.set_page_config(page_title="RCDJ228 Key7 Ultimate PRO", page_icon="🎧", layout="wide")
+st.set_page_config(page_title="RCDJ228 Key Ultimate", page_icon="🎧", layout="wide")
 
 # --- CONSTANTES HARMONIQUES ---
 BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
@@ -93,7 +93,7 @@ def get_sine_witness(note_mode_str, key_suffix=""):
 @st.cache_data(show_spinner=False, max_entries=5)
 def get_full_analysis(file_bytes, file_name):
     try:
-        y, sr = librosa.load(io.BytesIO(file_bytes), sr=22050, duration=180)
+        y, sr = librosa.load(io.BytesIO(file_bytes), sr=22050)
         tuning = librosa.estimate_tuning(y=y, sr=sr)
         y_harm = librosa.effects.harmonic(y, margin=3.0)
         y_filt = apply_bandpass_filter(y_harm, sr)
@@ -104,7 +104,7 @@ def get_full_analysis(file_bytes, file_name):
         for start in range(0, int(duration) - step, step):
             y_seg = y_filt[int(start*sr):int((start+step)*sr)]
             rms = np.mean(librosa.feature.rms(y=y_seg))
-            if rms < 0.005: continue 
+            if rms < 0.008: continue 
             
             chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr, tuning=tuning)
             key, score = solve_key(np.mean(chroma, axis=1))
@@ -167,7 +167,7 @@ def get_full_analysis(file_bytes, file_name):
         return {"error": str(e), "file_name": file_name}
 
 # --- INTERFACE ---
-st.title("🎧 RCDJ228 Key7 Ultimate PRO (Bulk 3min)")
+st.title("🎧 RCDJ228 Key Ultimate")
 
 files = st.file_uploader(f"📂 CHARGER LES FICHIERS (Analyse: 180s/fichier)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
 
