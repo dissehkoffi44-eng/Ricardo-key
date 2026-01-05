@@ -57,13 +57,9 @@ def get_camelot_pro(key_mode_str):
     except: return "??"
 
 def solve_key(chroma_avg):
-    """
-    Détecte la tonalité en utilisant les profils Krumhansl-Schmuckler (Pitch Classes 0-11).
-    """
     best_score, best_key, best_root, best_mode = -1, "", 0, "major"
     for mode, profile in PROFILES.items():
         for i in range(12):
-            # Utilisation de la corrélation statistique sur les 12 notes
             score = np.corrcoef(chroma_avg, np.roll(profile, i))[0, 1]
             if score > best_score:
                 best_score = score
@@ -73,26 +69,13 @@ def solve_key(chroma_avg):
     return {"key": best_key, "score": best_score, "root": best_root, "mode": best_mode}
 
 def refine_with_harmonic_rules(note_solide_obj, key_fin_obj):
-    """
-    Applique les règles de Dominante universelles (V -> i ou V -> I).
-    Empêche les erreurs de détection entre Si mineur et Fa# Majeur par exemple.
-    """
     root_s, mode_s = note_solide_obj['root'], note_solide_obj['mode']
     root_f, mode_f = key_fin_obj['root'], key_fin_obj['mode']
-
-    # Règle de la Quinte Juste (Distance de 7 demi-tons ou +5/-7)
-    # Si la fin est la Dominante (V) de la base stable (I/i)
     is_dominante = (root_f + 5) % 12 == root_s
-    
-    # CAS : Tension Dominante (ex: Finir sur Fa# Majeur alors que le morceau est en Si mineur)
     if is_dominante and mode_f == "major" and mode_s == "minor":
         return note_solide_obj['key'], "Dominante V"
-
-    # CAS : Résolution directe (Fin et Stable concordent)
     if root_s == root_f and mode_s == mode_f:
         return key_fin_obj['key'], "Résolue"
-
-    # Par défaut, on favorise la stabilité statistique sur 3 min
     return note_solide_obj['key'], "Stable"
 
 def get_sine_witness(note_mode_str, key_suffix=""):
@@ -132,7 +115,6 @@ def get_full_analysis(file_bytes, file_name):
         step, timeline = 8, []
         votes = Counter()
         
-        # 1. Analyse par segment (Stabilité statistique)
         for start in range(0, int(duration) - step, step):
             y_seg = y_filt[int(start*sr):int((start+step)*sr)]
             rms = np.mean(librosa.feature.rms(y=y_seg))
@@ -149,7 +131,6 @@ def get_full_analysis(file_bytes, file_name):
         if not timeline: return None
         df_tl = pd.DataFrame(timeline)
         
-        # 2. Identification de la Note Stable (Base)
         note_solide_str = votes.most_common(1)[0][0]
         ns_parts = note_solide_str.split(' ')
         note_solide_obj = {
@@ -158,25 +139,22 @@ def get_full_analysis(file_bytes, file_name):
             "mode": ns_parts[1].lower()
         }
 
-        # 3. Analyse de la Fin (Résolution)
         y_end = y_harm[int(max(0, duration-8)*sr):]
         chroma_end = np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1)
         key_fin_obj = solve_key(chroma_end)
 
-        # 4. Décision Finale Harmonique (Refinement)
         final_decision, type_res = refine_with_harmonic_rules(note_solide_obj, key_fin_obj)
         is_res = True if type_res != "Stable" else False
 
-        # Calcul de la confiance finale
         conf_finale = int(df_tl[df_tl['Note'] == final_decision]['Conf'].mean())
         if is_res: conf_finale = min(conf_finale + 5, 100)
 
-        # BPM et Design
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
         bg = "linear-gradient(135deg, #1D976C, #93F9B9)" if conf_finale > 82 else "linear-gradient(135deg, #2193B0, #6DD5ED)"
         
-        # Graphique
+        # --- GRAPHIQUE POUR TELEGRAM (COULEUR BLANCHE) ---
         fig = px.line(df_tl, x="Temps", y="Note", markers=True, title=f"Stabilité: {file_name}")
+        fig.update_traces(line=dict(color="white"), marker=dict(color="white")) # Force la ligne et les points en blanc
         fig.update_layout(
             template="plotly_dark", paper_bgcolor='#0e1117', plot_bgcolor='#0e1117',
             yaxis={'categoryorder':'array', 'categoryarray':NOTES_ORDER},
@@ -236,8 +214,11 @@ if files:
                 with c2: get_sine_witness(data['rec']['note'], fid)
                 with c3: st.info(f"Analyse Harmonique complète terminée")
 
-                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
-                                        category_orders={"Note": NOTES_ORDER}), use_container_width=True)
+                # --- AFFICHAGE STREAMLIT (COULEUR BLANCHE) ---
+                fig_st = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
+                                category_orders={"Note": NOTES_ORDER})
+                fig_st.update_traces(line=dict(color="white"), marker=dict(color="white"))
+                st.plotly_chart(fig_st, use_container_width=True)
 
             # --- ENVOI TELEGRAM ---
             try:
