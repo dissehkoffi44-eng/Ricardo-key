@@ -104,7 +104,7 @@ def get_full_analysis(file_bytes, file_name):
         for start in range(0, int(duration) - step, step):
             y_seg = y_filt[int(start*sr):int((start+step)*sr)]
             rms = np.mean(librosa.feature.rms(y=y_seg))
-            if rms < 0.008: continue 
+            if rms < 0.005: continue 
             
             chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr, tuning=tuning)
             key, score = solve_key(np.mean(chroma, axis=1))
