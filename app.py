@@ -21,6 +21,7 @@ st.set_page_config(page_title="RCDJ228 Key7 Ultimate PRO", page_icon="🎧", lay
 BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
 BASE_CAMELOT_MAJOR = {'B':'1B','F#':'2B','Gb':'2B','Db':'3B','C#':'3B','Ab':'4B','G#':'4B','Eb':'5B','D#':'5B','Bb':'6B','A#':'6B','F':'7B','C':'8B','G':'9B','D':'10B','A':'11B','E':'12B'}
 NOTES_LIST = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+# Ordre spécifique pour l'axe Y du graphique
 NOTES_ORDER = [f"{n} {m}" for n in NOTES_LIST for m in ['major', 'minor']]
 
 PROFILES = {
@@ -130,14 +131,32 @@ def get_full_analysis(file_bytes, file_name):
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
         bg = "linear-gradient(135deg, #1D976C, #93F9B9)" if conf_finale > 82 else "linear-gradient(135deg, #2193B0, #6DD5ED)"
         
-        fig = px.line(df_tl, x="Temps", y="Note", markers=True, template="plotly_dark")
-        fig.update_layout(yaxis={'categoryorder':'array', 'categoryarray':NOTES_ORDER}, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        # --- Graphique Amélioré pour Telegram et UI ---
+        fig = px.line(df_tl, x="Temps", y="Note", markers=True, template="plotly_dark", title=f"Profil Harmonique : {file_name}")
+        fig.update_layout(
+            yaxis={
+                'categoryorder':'array', 
+                'categoryarray':NOTES_ORDER,
+                'title': 'Notes Musicales',
+                'gridcolor': '#333'
+            },
+            xaxis={'title': 'Temps (sec)', 'gridcolor': '#333'},
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=20, r=20, t=40, b=20)
+        )
+        # Ajout d'une ligne de référence sur la décision finale
+        fig.add_hline(y=final_decision, line_dash="dot", line_color="gold", opacity=0.5)
 
         res = {
-            "file_name": file_name, "tempo": int(float(tempo)),
+            "file_name": file_name, 
+            "tempo": int(float(tempo)),
+            "tuning": round(tuning, 2),
             "rec": {"note": final_decision, "conf": conf_finale, "bg": bg},
-            "note_solide": note_solide, "is_res": is_res, "timeline": timeline,
-            "plot_bytes": fig.to_image(format="png", width=800, height=400)
+            "note_solide": note_solide, 
+            "is_res": is_res, 
+            "timeline": timeline,
+            "plot_bytes": fig.to_image(format="png", width=1000, height=500, scale=2)
         }
         
         del y, y_harm, y_filt, y_end, df_tl, chroma
@@ -150,7 +169,7 @@ def get_full_analysis(file_bytes, file_name):
 # --- INTERFACE ---
 st.title("🎧 RCDJ228 Key7 Ultimate PRO (Bulk 3min)")
 
-files = st.file_uploader(f"📂 CHARGER LES FLAC (Analyse: 180s/fichier)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
+files = st.file_uploader(f"📂 CHARGER LES FICHIERS (Analyse: 180s/fichier)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
 
 if files:
     total = len(files)
@@ -158,12 +177,10 @@ if files:
     status_text = st.empty()
     results_container = st.container()
     
-    # Parcours inversé pour afficher les nouveaux fichiers en haut
     for idx, f in reversed(list(enumerate(files))):
         status_text.text(f"Traitement {idx+1}/{total} : {f.name}...")
         fid = f"{f.name}_{f.size}"
         
-        # On rembobine le fichier pour la lecture
         f.seek(0)
         f_bytes = f.read()
         data = get_full_analysis(f_bytes, f.name)
@@ -176,41 +193,51 @@ if files:
                         <h2 style="margin:0;">CAMELOT: {get_camelot_pro(data['rec']['note'])} • CERTITUDE: {data['rec']['conf']}%</h2>
                     </div>
                     <div class="solid-note-box">
-                        💎 STABILITÉ SUR 3 MIN : <b>{data['note_solide']}</b> | RÉSOLUTION : <b>{'OUI' if data['is_res'] else 'NON'}</b>
+                        💎 STABILITÉ SUR 3 MIN : <b>{data['note_solide']}</b> | RÉSOLUTION : <b>{'OUI' if data['is_res'] else 'NON'}</b> | TUNING : <b>{data['tuning']}</b>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 c1, c2, c3 = st.columns(3)
                 with c1: st.markdown(f'<div class="metric-container">BPM<br><span class="value-custom">{data["tempo"]}</span></div>', unsafe_allow_html=True)
                 with c2: get_sine_witness(data['rec']['note'], fid)
-                with c3: st.info("Rapport auto-envoyé 🚀")
+                with c3: st.info("Rapport Telegram envoyé avec succès 🚀")
 
-                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", template="plotly_dark"), use_container_width=True)
+                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", template="plotly_dark", 
+                                        category_orders={"Note": NOTES_ORDER}), use_container_width=True)
 
-            # --- ENVOI AUTOMATIQUE TELEGRAM ---
+            # --- ENVOI AUTOMATIQUE TELEGRAM DÉTAILLÉ ---
             try:
                 total_seg = len(data['timeline'])
                 main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
                 stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
                 
+                # Émoticône de confiance basé sur le score
+                trust_icon = "💎" if data['rec']['conf'] > 88 else "✅" if data['rec']['conf'] > 75 else "⚠️"
+                
                 cap = (
-                    f"✨ *RCDJ228 KEY7 ULTIMATE PRO*\n"
+                    f"🎧 *RAPPORT D'ANALYSE RCDJ228 PRO*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📂 *FICHIER :* `{data['file_name']}`\n"
-                    f"⏱ *TEMPO :* `{data['tempo']} BPM`\n\n"
-                    f"🎹 *RÉSULTAT (ANALYSE 3 MIN)*\n"
-                    f"├─ Clé : `{data['rec']['note']}`\n"
-                    f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` \n"
-                    f"└─ Certitude : `{data['rec']['conf']}%` {'✅' if data['rec']['conf'] > 85 else '⚠️'}\n\n"
-                    f"📊 *STABILITÉ :* `{stability}%`\n"
-                    f"━━━━━━━━━━━━━━━━━━━━"
+                    f"⏱ *TEMPO :* `{data['tempo']} BPM`\n"
+                    f"🎸 *ACCORDAGE :* `{data['tuning']} st`\n\n"
+                    f"🎹 *RÉSULTAT HARMONIQUE*\n"
+                    f"├─ Clé Détectée : *{data['rec']['note']}*\n"
+                    f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` 🌀\n"
+                    f"├─ Certitude : `{data['rec']['conf']}%` {trust_icon}\n"
+                    f"└─ Stabilité : `{stability}%` {'🔥' if stability > 75 else '🌊'}\n\n"
+                    f"🔬 *ANALYSE TECHNIQUE*\n"
+                    f"├─ Base Stable : `{data['note_solide']}`\n"
+                    f"├─ Résolution Finale : `{'OUI' if data['is_res'] else 'NON'}`\n"
+                    f"└─ Fenêtre : `180 secondes`\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🚀 *Généré par Key7 Ultimate PRO*"
                 )
                 
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", 
                               files={'photo': data['plot_bytes']}, 
                               data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'Markdown'})
-            except:
-                pass
+            except Exception as e:
+                st.warning(f"Erreur d'envoi Telegram : {e}")
 
         prog_bar.progress((total - idx) / total)
         del f_bytes, data
