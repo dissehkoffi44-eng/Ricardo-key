@@ -131,22 +131,32 @@ def get_full_analysis(file_bytes, file_name):
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
         bg = "linear-gradient(135deg, #1D976C, #93F9B9)" if conf_finale > 82 else "linear-gradient(135deg, #2193B0, #6DD5ED)"
         
-        # --- Graphique Amélioré pour Telegram et UI ---
-        fig = px.line(df_tl, x="Temps", y="Note", markers=True, template="plotly_dark", title=f"Profil Harmonique : {file_name}")
+        # --- Graphique Stylisé (Format Image Telegram) ---
+        fig = px.line(df_tl, x="Temps", y="Note", markers=True, 
+                     title=f"Stabilité: {file_name}")
+        
+        fig.update_traces(line_color='#6366F1', marker=dict(size=8, color='#6366F1'))
+        
         fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor='#0e1117',
+            plot_bgcolor='#0e1117',
+            font=dict(color="white", size=14),
+            title_font=dict(size=22),
             yaxis={
                 'categoryorder':'array', 
                 'categoryarray':NOTES_ORDER,
-                'title': 'Notes Musicales',
-                'gridcolor': '#333'
+                'title': 'Note',
+                'gridcolor': '#222',
+                'zeroline': False
             },
-            xaxis={'title': 'Temps (sec)', 'gridcolor': '#333'},
-            paper_bgcolor='rgba(0,0,0,0)', 
-            plot_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=20, r=20, t=40, b=20)
+            xaxis={
+                'title': 'Temps', 
+                'gridcolor': '#222',
+                'zeroline': False
+            },
+            margin=dict(l=60, r=30, t=80, b=60)
         )
-        # Ajout d'une ligne de référence sur la décision finale
-        fig.add_hline(y=final_decision, line_dash="dot", line_color="gold", opacity=0.5)
 
         res = {
             "file_name": file_name, 
@@ -156,7 +166,7 @@ def get_full_analysis(file_bytes, file_name):
             "note_solide": note_solide, 
             "is_res": is_res, 
             "timeline": timeline,
-            "plot_bytes": fig.to_image(format="png", width=1000, height=500, scale=2)
+            "plot_bytes": fig.to_image(format="png", width=1200, height=600, scale=2)
         }
         
         del y, y_harm, y_filt, y_end, df_tl, chroma
@@ -202,7 +212,8 @@ if files:
                 with c2: get_sine_witness(data['rec']['note'], fid)
                 with c3: st.info("Rapport Telegram envoyé avec succès 🚀")
 
-                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", template="plotly_dark", 
+                # Affichage web du graphique (utilise le même DataFrame)
+                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
                                         category_orders={"Note": NOTES_ORDER}), use_container_width=True)
 
             # --- ENVOI AUTOMATIQUE TELEGRAM DÉTAILLÉ ---
@@ -211,7 +222,6 @@ if files:
                 main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
                 stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
                 
-                # Émoticône de confiance basé sur le score
                 trust_icon = "💎" if data['rec']['conf'] > 88 else "✅" if data['rec']['conf'] > 75 else "⚠️"
                 
                 cap = (
