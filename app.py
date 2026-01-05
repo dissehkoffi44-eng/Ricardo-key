@@ -52,6 +52,7 @@ def get_camelot_pro(key_mode_str):
     try:
         parts = key_mode_str.split(" ")
         key, mode = parts[0], parts[1].lower()
+        # Rappel : F# Minor est bien mappé sur 11A comme demandé
         return BASE_CAMELOT_MINOR.get(key, "??") if mode == 'minor' else BASE_CAMELOT_MAJOR.get(key, "??")
     except: return "??"
 
@@ -87,13 +88,13 @@ def get_sine_witness(note_mode_str, key_suffix=""):
     }};
     </script>""", height=50)
 
-# --- COEUR DE L'ANALYSE OPTIMISÉ ---
+# --- COEUR DE L'ANALYSE (FULL 3 MIN OPTIMISÉ) ---
 
-@st.cache_data(show_spinner=False, max_entries=10) # Limite le cache pour économiser la RAM
+@st.cache_data(show_spinner=False, max_entries=5) # Cache ultra-limité pour 70 fichiers
 def get_full_analysis(file_bytes, file_name):
     try:
-        # Optimisation : Charger seulement les 90 premières sec (suffisant pour la tonalité)
-        y, sr = librosa.load(io.BytesIO(file_bytes), sr=22050, duration=90)
+        # ANALYSE SUR 180 SECONDES (3 MIN)
+        y, sr = librosa.load(io.BytesIO(file_bytes), sr=22050, duration=180)
         
         tuning = librosa.estimate_tuning(y=y, sr=sr)
         y_harm = librosa.effects.harmonic(y, margin=3.0)
@@ -106,7 +107,7 @@ def get_full_analysis(file_bytes, file_name):
         for start in range(0, int(duration) - step, step):
             y_seg = y_filt[int(start*sr):int((start+step)*sr)]
             rms = np.mean(librosa.feature.rms(y=y_seg))
-            if rms < 0.01: continue
+            if rms < 0.005: continue # Ignore les silences
             
             chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr, tuning=tuning)
             key, score = solve_key(np.mean(chroma, axis=1))
@@ -118,14 +119,14 @@ def get_full_analysis(file_bytes, file_name):
         df_tl = pd.DataFrame(timeline)
         note_solide = votes.most_common(1)[0][0]
 
-        # 2. Analyse de Résolution (Fin de l'échantillon chargé)
-        y_end = y_harm[int(max(0, duration-6)*sr):]
+        # 2. Analyse de Résolution (Fin des 3 mins)
+        y_end = y_harm[int(max(0, duration-8)*sr):]
         key_fin, score_fin = solve_key(np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1))
 
         # 3. Arbitrage
         final_decision = note_solide
         is_res = False
-        if score_fin > 0.80 and key_fin in [v[0] for v in votes.most_common(3)]:
+        if score_fin > 0.75 and key_fin in [v[0] for v in votes.most_common(3)]:
             final_decision = key_fin
             is_res = True
 
@@ -145,8 +146,8 @@ def get_full_analysis(file_bytes, file_name):
             "plot_bytes": fig.to_image(format="png", width=800, height=400)
         }
         
-        # Nettoyage explicite des gros objets
-        del y, y_harm, y_filt, y_end, df_tl
+        # LIBÉRATION MÉMOIRE CRITIQUE
+        del y, y_harm, y_filt, y_end, df_tl, chroma
         gc.collect()
         
         return res
@@ -154,30 +155,35 @@ def get_full_analysis(file_bytes, file_name):
         return {"error": str(e), "file_name": file_name}
 
 # --- INTERFACE ---
-st.title("🎧 RCDJ228 Key7 Ultimate PRO")
+st.title("🎧 RCDJ228 Key7 Ultimate PRO (Bulk 3min)")
 
-files = st.file_uploader("📂 AUDIO FILES (FLAC READY)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
+files = st.file_uploader(f"📂 CHARGER LES FLAC (Analyse: 180s/fichier)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
 
 if files:
-    st.info(f"Analyse de {len(files)} fichiers en cours...")
+    total = len(files)
+    prog_bar = st.progress(0)
+    status_text = st.empty()
     
-    for f in files:
+    # Création d'un conteneur pour les résultats pour éviter de scroller pendant le calcul
+    results_container = st.container()
+    
+    for idx, f in enumerate(files):
+        status_text.text(f"Traitement {idx+1}/{total} : {f.name}...")
         fid = f"{f.name}_{f.size}"
         
-        # Lecture binaire
+        # Lecture et Analyse
         f_bytes = f.read()
         data = get_full_analysis(f_bytes, f.name)
         
         if data and "error" not in data:
-            # Expanders fermés par défaut pour économiser les ressources du navigateur
-            with st.expander(f"📊 {data['file_name']}", expanded=False):
+            with results_container.expander(f"📊 {data['file_name']}", expanded=(total == 1)):
                 st.markdown(f"""
                     <div class="final-decision-box" style="background:{data['rec']['bg']};">
                         <h1 style="font-size:4.5em; margin:0; font-weight:900;">{data['rec']['note']}</h1>
                         <h2 style="margin:0;">CAMELOT: {get_camelot_pro(data['rec']['note'])} • CERTITUDE: {data['rec']['conf']}%</h2>
                     </div>
                     <div class="solid-note-box">
-                        💎 STABILITÉ : <b>{data['note_solide']}</b> | RÉSOLUTION FINALE : <b>{'OUI' if data['is_res'] else 'NON'}</b>
+                        💎 STABILITÉ SUR 3 MIN : <b>{data['note_solide']}</b> | RÉSOLUTION : <b>{'OUI' if data['is_res'] else 'NON'}</b>
                     </div>
                 """, unsafe_allow_html=True)
                 
@@ -185,7 +191,7 @@ if files:
                 with c1: st.markdown(f'<div class="metric-container">BPM<br><span class="value-custom">{data["tempo"]}</span></div>', unsafe_allow_html=True)
                 with c2: get_sine_witness(data['rec']['note'], fid)
                 with c3:
-                    if st.button(f"🚀 TELEGRAM REPORT", key=f"tg_{fid}"):
+                    if st.button(f"🚀 ENVOYER RAPPORT", key=f"tg_{fid}"):
                         total_seg = len(data['timeline'])
                         main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
                         stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
@@ -195,30 +201,29 @@ if files:
                             f"━━━━━━━━━━━━━━━━━━━━\n"
                             f"📂 *FICHIER :* `{data['file_name']}`\n"
                             f"⏱ *TEMPO :* `{data['tempo']} BPM`\n\n"
-                            f"🎹 *RÉSULTAT HARMONIQUE*\n"
+                            f"🎹 *RÉSULTAT (ANALYSE 3 MIN)*\n"
                             f"├─ Clé : `{data['rec']['note']}`\n"
                             f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` \n"
                             f"└─ Certitude : `{data['rec']['conf']}%` {'✅' if data['rec']['conf'] > 85 else '⚠️'}\n\n"
-                            f"📊 *ANALYSE EXPERTE*\n"
-                            f"├─ Taux Stabilité : `{stability}%`\n"
-                            f"├─ Résolution Finale : `{'OUI' if data['is_res'] else 'NON'}`\n"
-                            f"└─ Statut : `{'PRO MIX READY' if stability > 70 else 'COMPLEX HARMONY'}`\n"
-                            f"━━━━━━━━━━━━━━━━━━━━\n"
-                            f"🎧 *Generated by RCDJ228 AI*"
+                            f"📊 *STABILITÉ :* `{stability}%`\n"
+                            f"━━━━━━━━━━━━━━━━━━━━"
                         )
                         
                         resp = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", 
                                              files={'photo': data['plot_bytes']}, 
                                              data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'Markdown'})
-                        if resp.status_code == 200: st.toast("🚀 Rapport expert envoyé !")
+                        if resp.status_code == 200: st.toast("Envoyé !")
                         else: st.error("Erreur Telegram.")
 
-                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", template="plotly_dark", title="Stabilité Harmonique"), use_container_width=True)
+                st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", template="plotly_dark"), use_container_width=True)
         
-        # Nettoyage mémoire après chaque fichier traité
+        # NETTOYAGE APRÈS CHAQUE FICHIER
+        prog_bar.progress((idx + 1) / total)
         del f_bytes, data
         gc.collect()
 
-if st.sidebar.button("🧹 CLEAR CACHE"):
+    status_text.text(f"✅ Analyse de {total} fichiers terminée.")
+
+if st.sidebar.button("🧹 VIDER LE CACHE"):
     st.cache_data.clear()
     st.rerun()
