@@ -21,9 +21,9 @@ st.set_page_config(page_title="RCDJ228 Key Ultimate", page_icon="🎧", layout="
 BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
 BASE_CAMELOT_MAJOR = {'B':'1B','F#':'2B','Gb':'2B','Db':'3B','C#':'3B','Ab':'4B','G#':'4B','Eb':'5B','D#':'5B','Bb':'6B','A#':'6B','F':'7B','C':'8B','G':'9B','D':'10B','A':'11B','E':'12B'}
 NOTES_LIST = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-# Ordre spécifique pour l'axe Y du graphique
 NOTES_ORDER = [f"{n} {m}" for n in NOTES_LIST for m in ['major', 'minor']]
 
+# Profils Krumhansl-Schmuckler
 PROFILES = {
     "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
     "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
@@ -57,13 +57,43 @@ def get_camelot_pro(key_mode_str):
     except: return "??"
 
 def solve_key(chroma_avg):
-    best_score, best_key = -1, ""
+    """
+    Détecte la tonalité en utilisant les profils Krumhansl-Schmuckler (Pitch Classes 0-11).
+    """
+    best_score, best_key, best_root, best_mode = -1, "", 0, "major"
     for mode, profile in PROFILES.items():
         for i in range(12):
+            # Utilisation de la corrélation statistique sur les 12 notes
             score = np.corrcoef(chroma_avg, np.roll(profile, i))[0, 1]
             if score > best_score:
-                best_score, best_key = score, f"{NOTES_LIST[i]} {mode}"
-    return best_key, best_score
+                best_score = score
+                best_root = i
+                best_mode = mode
+                best_key = f"{NOTES_LIST[i]} {mode}"
+    return {"key": best_key, "score": best_score, "root": best_root, "mode": best_mode}
+
+def refine_with_harmonic_rules(note_solide_obj, key_fin_obj):
+    """
+    Applique les règles de Dominante universelles (V -> i ou V -> I).
+    Empêche les erreurs de détection entre Si mineur et Fa# Majeur par exemple.
+    """
+    root_s, mode_s = note_solide_obj['root'], note_solide_obj['mode']
+    root_f, mode_f = key_fin_obj['root'], key_fin_obj['mode']
+
+    # Règle de la Quinte Juste (Distance de 7 demi-tons ou +5/-7)
+    # Si la fin est la Dominante (V) de la base stable (I/i)
+    is_dominante = (root_f + 5) % 12 == root_s
+    
+    # CAS : Tension Dominante (ex: Finir sur Fa# Majeur alors que le morceau est en Si mineur)
+    if is_dominante and mode_f == "major" and mode_s == "minor":
+        return note_solide_obj['key'], "Dominante V"
+
+    # CAS : Résolution directe (Fin et Stable concordent)
+    if root_s == root_f and mode_s == mode_f:
+        return key_fin_obj['key'], "Résolue"
+
+    # Par défaut, on favorise la stabilité statistique sur 3 min
+    return note_solide_obj['key'], "Stable"
 
 def get_sine_witness(note_mode_str, key_suffix=""):
     if note_mode_str == "N/A": return ""
@@ -88,7 +118,7 @@ def get_sine_witness(note_mode_str, key_suffix=""):
     }};
     </script>""", height=50)
 
-# --- COEUR DE L'ANALYSE (FULL 3 MIN OPTIMISÉ) ---
+# --- COEUR DE L'ANALYSE ---
 
 @st.cache_data(show_spinner=False, max_entries=5)
 def get_full_analysis(file_bytes, file_name):
@@ -101,60 +131,55 @@ def get_full_analysis(file_bytes, file_name):
 
         step, timeline = 8, []
         votes = Counter()
+        
+        # 1. Analyse par segment (Stabilité statistique)
         for start in range(0, int(duration) - step, step):
             y_seg = y_filt[int(start*sr):int((start+step)*sr)]
             rms = np.mean(librosa.feature.rms(y=y_seg))
             if rms < 0.005: continue 
             
             chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr, tuning=tuning)
-            key, score = solve_key(np.mean(chroma, axis=1))
+            res_obj = solve_key(np.mean(chroma, axis=1))
+            key, score = res_obj['key'], res_obj['score']
+            
             weight = int(score * 100) + int(rms * 500)
             votes[key] += weight
             timeline.append({"Temps": start, "Note": key, "Conf": round(score*100, 1)})
 
         if not timeline: return None
         df_tl = pd.DataFrame(timeline)
-        note_solide = votes.most_common(1)[0][0]
+        
+        # 2. Identification de la Note Stable (Base)
+        note_solide_str = votes.most_common(1)[0][0]
+        ns_parts = note_solide_str.split(' ')
+        note_solide_obj = {
+            "key": note_solide_str, 
+            "root": NOTES_LIST.index(ns_parts[0]), 
+            "mode": ns_parts[1].lower()
+        }
 
+        # 3. Analyse de la Fin (Résolution)
         y_end = y_harm[int(max(0, duration-8)*sr):]
-        key_fin, score_fin = solve_key(np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1))
+        chroma_end = np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1)
+        key_fin_obj = solve_key(chroma_end)
 
-        final_decision = note_solide
-        is_res = False
-        if score_fin > 0.75 and key_fin in [v[0] for v in votes.most_common(3)]:
-            final_decision = key_fin
-            is_res = True
+        # 4. Décision Finale Harmonique (Refinement)
+        final_decision, type_res = refine_with_harmonic_rules(note_solide_obj, key_fin_obj)
+        is_res = True if type_res != "Stable" else False
 
+        # Calcul de la confiance finale
         conf_finale = int(df_tl[df_tl['Note'] == final_decision]['Conf'].mean())
         if is_res: conf_finale = min(conf_finale + 5, 100)
 
+        # BPM et Design
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
         bg = "linear-gradient(135deg, #1D976C, #93F9B9)" if conf_finale > 82 else "linear-gradient(135deg, #2193B0, #6DD5ED)"
         
-        # --- Graphique Stylisé (Format Image Telegram) ---
-        fig = px.line(df_tl, x="Temps", y="Note", markers=True, 
-                     title=f"Stabilité: {file_name}")
-        
-        fig.update_traces(line_color='#6366F1', marker=dict(size=8, color='#6366F1'))
-        
+        # Graphique
+        fig = px.line(df_tl, x="Temps", y="Note", markers=True, title=f"Stabilité: {file_name}")
         fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor='#0e1117',
-            plot_bgcolor='#0e1117',
-            font=dict(color="white", size=14),
-            title_font=dict(size=22),
-            yaxis={
-                'categoryorder':'array', 
-                'categoryarray':NOTES_ORDER,
-                'title': 'Note',
-                'gridcolor': '#222',
-                'zeroline': False
-            },
-            xaxis={
-                'title': 'Temps', 
-                'gridcolor': '#222',
-                'zeroline': False
-            },
+            template="plotly_dark", paper_bgcolor='#0e1117', plot_bgcolor='#0e1117',
+            yaxis={'categoryorder':'array', 'categoryarray':NOTES_ORDER},
             margin=dict(l=60, r=30, t=80, b=60)
         )
 
@@ -162,8 +187,8 @@ def get_full_analysis(file_bytes, file_name):
             "file_name": file_name, 
             "tempo": int(float(tempo)),
             "tuning": round(tuning, 2),
-            "rec": {"note": final_decision, "conf": conf_finale, "bg": bg},
-            "note_solide": note_solide, 
+            "rec": {"note": final_decision, "conf": conf_finale, "bg": bg, "type": type_res},
+            "note_solide": note_solide_str, 
             "is_res": is_res, 
             "timeline": timeline,
             "plot_bytes": fig.to_image(format="png", width=1200, height=600, scale=2)
@@ -171,13 +196,12 @@ def get_full_analysis(file_bytes, file_name):
         
         del y, y_harm, y_filt, y_end, df_tl, chroma
         gc.collect()
-        
         return res
     except Exception as e:
         return {"error": str(e), "file_name": file_name}
 
 # --- INTERFACE ---
-st.title("🎧 RCDJ228 Key Ultimate")
+st.title("🎧 RCDJ228 Key Ultimate PRO")
 
 files = st.file_uploader(f"📂 CHARGER LES FICHIERS (Analyse: 180s/fichier)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
 
@@ -190,7 +214,6 @@ if files:
     for idx, f in reversed(list(enumerate(files))):
         status_text.text(f"Traitement {idx+1}/{total} : {f.name}...")
         fid = f"{f.name}_{f.size}"
-        
         f.seek(0)
         f_bytes = f.read()
         data = get_full_analysis(f_bytes, f.name)
@@ -201,59 +224,51 @@ if files:
                     <div class="final-decision-box" style="background:{data['rec']['bg']};">
                         <h1 style="font-size:4.5em; margin:0; font-weight:900;">{data['rec']['note']}</h1>
                         <h2 style="margin:0;">CAMELOT: {get_camelot_pro(data['rec']['note'])} • CERTITUDE: {data['rec']['conf']}%</h2>
+                        <p style="font-weight:bold; opacity:0.8;">MODE : {data['rec']['type'].upper()}</p>
                     </div>
                     <div class="solid-note-box">
-                        💎 STABILITÉ SUR 3 MIN : <b>{data['note_solide']}</b> | RÉSOLUTION : <b>{'OUI' if data['is_res'] else 'NON'}</b> | TUNING : <b>{data['tuning']}</b>
+                        💎 STABILITÉ : <b>{data['note_solide']}</b> | RELATION : <b>{data['rec']['type']}</b> | TUNING : <b>{data['tuning']}</b>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 c1, c2, c3 = st.columns(3)
                 with c1: st.markdown(f'<div class="metric-container">BPM<br><span class="value-custom">{data["tempo"]}</span></div>', unsafe_allow_html=True)
                 with c2: get_sine_witness(data['rec']['note'], fid)
-                with c3: st.info("Rapport Telegram envoyé avec succès 🚀")
+                with c3: st.info(f"Analyse Harmonique complète terminée")
 
-                # Affichage web du graphique (utilise le même DataFrame)
                 st.plotly_chart(px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
                                         category_orders={"Note": NOTES_ORDER}), use_container_width=True)
 
-            # --- ENVOI AUTOMATIQUE TELEGRAM DÉTAILLÉ ---
+            # --- ENVOI TELEGRAM ---
             try:
                 total_seg = len(data['timeline'])
                 main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
                 stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
-                
-                trust_icon = "💎" if data['rec']['conf'] > 88 else "✅" if data['rec']['conf'] > 75 else "⚠️"
+                trust_icon = "💎" if data['rec']['conf'] > 88 else "✅"
                 
                 cap = (
-                    f"🎧 *RAPPORT D'ANALYSE RCDJ228 PRO*\n"
+                    f"🎧 *RAPPORT HARMONIQUE PRO*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"📂 *FICHIER :* `{data['file_name']}`\n"
-                    f"⏱ *TEMPO :* `{data['tempo']} BPM`\n"
-                    f"🎸 *ACCORDAGE :* `{data['tuning']} st`\n\n"
-                    f"🎹 *RÉSULTAT HARMONIQUE*\n"
-                    f"├─ Clé Détectée : *{data['rec']['note']}*\n"
+                    f"🎹 *RÉSULTAT :* *{data['rec']['note']}*\n"
                     f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` 🌀\n"
                     f"├─ Certitude : `{data['rec']['conf']}%` {trust_icon}\n"
-                    f"└─ Stabilité : `{stability}%` {'🔥' if stability > 75 else '🌊'}\n\n"
-                    f"🔬 *ANALYSE TECHNIQUE*\n"
-                    f"├─ Base Stable : `{data['note_solide']}`\n"
-                    f"├─ Résolution Finale : `{'OUI' if data['is_res'] else 'NON'}`\n"
-                    f"└─ Fenêtre : `180 secondes`\n"
+                    f"├─ Relation : `{data['rec']['type']}`\n"
+                    f"└─ Stabilité : `{stability}%` 🔥\n\n"
+                    f"⏱ *TEMPO :* `{data['tempo']} BPM` | `180s`\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"🚀 *Généré par Key7 Ultimate PRO*"
+                    f"🚀 *Généré par RCDJ228 Key Ultimate*"
                 )
-                
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", 
                               files={'photo': data['plot_bytes']}, 
                               data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'Markdown'})
             except Exception as e:
-                st.warning(f"Erreur d'envoi Telegram : {e}")
+                st.warning(f"Erreur Telegram : {e}")
 
         prog_bar.progress((total - idx) / total)
-        del f_bytes, data
         gc.collect()
 
-    status_text.text(f"✅ Analyse et Envoi de {total} fichiers terminés.")
+    status_text.text(f"✅ Analyse de {total} fichiers terminée.")
 
 if st.sidebar.button("🧹 VIDER LE CACHE"):
     st.cache_data.clear()
