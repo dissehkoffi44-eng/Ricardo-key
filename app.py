@@ -241,7 +241,7 @@ if files:
 
                 fig_st = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
                                 category_orders={"Note": NOTES_ORDER})
-                fig_st.update_traces(line=dict(color="#6366F1"), marker=dict(color="white"))
+                fig_st.update_traces(line=dict(color="#6366F1"), marker=dict(color="#000000"))
                 st.plotly_chart(fig_st, use_container_width=True)
 
             # --- ENVOI TELEGRAM ---
