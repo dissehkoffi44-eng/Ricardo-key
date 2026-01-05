@@ -69,14 +69,32 @@ def solve_key(chroma_avg):
     return {"key": best_key, "score": best_score, "root": best_root, "mode": best_mode}
 
 def refine_with_harmonic_rules(note_solide_obj, key_fin_obj):
+    """
+    Arbitre harmonique : Analyse la relation entre la tendance globale (note solide)
+    et la conclusion du morceau (key fin) pour détecter les cadences.
+    """
     root_s, mode_s = note_solide_obj['root'], note_solide_obj['mode']
     root_f, mode_f = key_fin_obj['root'], key_fin_obj['mode']
-    is_dominante = (root_f + 5) % 12 == root_s
-    if is_dominante and mode_f == "major" and mode_s == "minor":
-        return note_solide_obj['key'], "Dominante V"
+    
+    # 1. CAS DE RÉSOLUTION PARFAITE (CADENCE AUTHENTIQUE)
+    # Si la note solide est la Quinte (V) et que la fin est la Tonique (I)
+    # La fin a raison : c'est une correction harmonique.
+    if (root_s == (root_f + 7) % 12) or (root_s == (root_f + 5) % 12):
+        if mode_s == mode_f:
+            return key_fin_obj['key'], "Cadence Parfaite (Résolue)"
+
+    # 2. CAS DE DOMINANTE FINALE (FIN OUVERTE)
+    # Si la fin est la quinte de la note solide (V -> I attendu mais reste sur V)
+    is_dominante = (root_f == (root_s + 7) % 12)
+    if is_dominante:
+        return note_solide_obj['key'], "Cadence Imparfaite (V)"
+
+    # 3. IDENTITÉ (STABILITÉ TOTALE)
     if root_s == root_f and mode_s == mode_f:
-        return key_fin_obj['key'], "Résolue"
-    return note_solide_obj['key'], "Stable"
+        return key_fin_obj['key'], "Stabilité Absolue"
+
+    # 4. PAR DÉFAUT : On fait confiance à la majorité statistique (Note Solide)
+    return note_solide_obj['key'], "Tendance Globale"
 
 def get_sine_witness(note_mode_str, key_suffix=""):
     if note_mode_str == "N/A": return ""
@@ -139,22 +157,29 @@ def get_full_analysis(file_bytes, file_name):
             "mode": ns_parts[1].lower()
         }
 
+        # Analyse spécifique de la fin (8 dernières secondes) pour la cadence
         y_end = y_harm[int(max(0, duration-8)*sr):]
         chroma_end = np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1)
         key_fin_obj = solve_key(chroma_end)
 
+        # APPLICATION DE LA LOGIQUE HARMONIQUE (CADENCES)
         final_decision, type_res = refine_with_harmonic_rules(note_solide_obj, key_fin_obj)
-        is_res = True if type_res != "Stable" else False
+        
+        # Si le type de résultat contient "Cadence" ou "Résolue", on considère l'analyse comme dynamique
+        is_res = any(x in type_res for x in ["Cadence", "Résolue"])
 
-        conf_finale = int(df_tl[df_tl['Note'] == final_decision]['Conf'].mean())
-        if is_res: conf_finale = min(conf_finale + 5, 100)
+        # Calcul de confiance basé sur la décision finale
+        conf_finale = int(df_tl[df_tl['Note'] == final_decision]['Conf'].mean()) if final_decision in df_tl['Note'].values else int(key_fin_obj['score']*100)
+        if is_res: conf_finale = min(conf_finale + 10, 100) # Bonus de confiance pour les résolutions harmoniques
 
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        
+        # Design dynamique selon la certitude
         bg = "linear-gradient(135deg, #1D976C, #93F9B9)" if conf_finale > 82 else "linear-gradient(135deg, #2193B0, #6DD5ED)"
         
-        # --- GRAPHIQUE POUR TELEGRAM (COULEUR BLANCHE) ---
-        fig = px.line(df_tl, x="Temps", y="Note", markers=True, title=f"Stabilité: {file_name}")
-        fig.update_traces(line=dict(color="white"), marker=dict(color="white")) # Force la ligne et les points en blanc
+        # Graphique pour Telegram
+        fig = px.line(df_tl, x="Temps", y="Note", markers=True, title=f"Analyse Harmonique: {file_name}")
+        fig.update_traces(line=dict(color="white"), marker=dict(color="white"))
         fig.update_layout(
             template="plotly_dark", paper_bgcolor='#0e1117', plot_bgcolor='#0e1117',
             yaxis={'categoryorder':'array', 'categoryarray':NOTES_ORDER},
@@ -202,22 +227,21 @@ if files:
                     <div class="final-decision-box" style="background:{data['rec']['bg']};">
                         <h1 style="font-size:4.5em; margin:0; font-weight:900;">{data['rec']['note']}</h1>
                         <h2 style="margin:0;">CAMELOT: {get_camelot_pro(data['rec']['note'])} • CERTITUDE: {data['rec']['conf']}%</h2>
-                        <p style="font-weight:bold; opacity:0.8;">MODE : {data['rec']['type'].upper()}</p>
+                        <p style="font-weight:bold; opacity:0.8; letter-spacing: 2px;">LOGIQUE : {data['rec']['type'].upper()}</p>
                     </div>
                     <div class="solid-note-box">
-                        💎 STABILITÉ : <b>{data['note_solide']}</b> | RELATION : <b>{data['rec']['type']}</b> | TUNING : <b>{data['tuning']}</b>
+                        💎 TENDANCE GLOBALE : <b>{data['note_solide']}</b> | ANALYSE : <b>{data['rec']['type']}</b> | TUNING : <b>{data['tuning']}</b>
                     </div>
                 """, unsafe_allow_html=True)
                 
                 c1, c2, c3 = st.columns(3)
                 with c1: st.markdown(f'<div class="metric-container">BPM<br><span class="value-custom">{data["tempo"]}</span></div>', unsafe_allow_html=True)
                 with c2: get_sine_witness(data['rec']['note'], fid)
-                with c3: st.info(f"Analyse Harmonique complète terminée")
+                with c3: st.info(f"Analyse Harmonique complète : {data['rec']['type']}")
 
-                # --- AFFICHAGE STREAMLIT (COULEUR BLANCHE) ---
                 fig_st = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
                                 category_orders={"Note": NOTES_ORDER})
-                fig_st.update_traces(line=dict(color="Blue"), marker=dict(color="Black"))
+                fig_st.update_traces(line=dict(color="#6366F1"), marker=dict(color="white"))
                 st.plotly_chart(fig_st, use_container_width=True)
 
             # --- ENVOI TELEGRAM ---
@@ -234,7 +258,7 @@ if files:
                     f"🎹 *RÉSULTAT :* *{data['rec']['note']}*\n"
                     f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` 🌀\n"
                     f"├─ Certitude : `{data['rec']['conf']}%` {trust_icon}\n"
-                    f"├─ Relation : `{data['rec']['type']}`\n"
+                    f"├─ Logique : `{data['rec']['type']}`\n"
                     f"└─ Stabilité : `{stability}%` 🔥\n\n"
                     f"⏱ *TEMPO :* `{data['tempo']} BPM` | `180s`\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
