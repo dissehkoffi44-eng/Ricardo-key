@@ -217,7 +217,7 @@ if files:
                 # --- AFFICHAGE STREAMLIT (COULEUR BLANCHE) ---
                 fig_st = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
                                 category_orders={"Note": NOTES_ORDER})
-                fig_st.update_traces(line=dict(color="Blue"), marker=dict(color="white"))
+                fig_st.update_traces(line=dict(color="Blue"), marker=dict(color="Black"))
                 st.plotly_chart(fig_st, use_container_width=True)
 
             # --- ENVOI TELEGRAM ---
