@@ -95,6 +95,7 @@ def get_bass_priority(y, sr):
 def solve_key_sniper(chroma_vector, bass_vector):
     best_overall_score = -1
     best_key = "Unknown"
+    # Normalisation pour comparaison équitable
     cv = (chroma_vector - chroma_vector.min()) / (chroma_vector.max() - chroma_vector.min() + 1e-6)
     bv = (bass_vector - bass_vector.min()) / (bass_vector.max() - bass_vector.min() + 1e-6)
     
@@ -103,13 +104,30 @@ def solve_key_sniper(chroma_vector, bass_vector):
             for i in range(12):
                 reference = np.roll(p_data[mode], i)
                 score = np.corrcoef(cv, reference)[0, 1]
-                if p_name == "sniper_triads": score *= 3 
+                
+                # --- POIDS DES TRIADES ---
+                if p_name == "sniper_triads": score *= 3.0 
+                
+                # --- SÉCURITÉ MAJEUR / MINEUR (Validation de la Tierce) ---
+                third_major = (i + 4) % 12
+                third_minor = (i + 3) % 12
+                if mode == "major":
+                    if cv[third_major] > cv[third_minor]: score += 0.25 # Bonus si la tierce majeure est plus forte
+                else:
+                    if cv[third_minor] > cv[third_major]: score += 0.25 # Bonus si la tierce mineure est plus forte
+                
+                # --- VALIDATION MINEURE (Note Sensible / Dominante) ---
                 if mode == "minor":
                     dom_idx, leading_tone = (i + 7) % 12, (i + 11) % 12
-                    if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.35 
+                    if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.50 
+                
+                # Validation par la Basse
                 if bv[i] > 0.6: score += (bv[i] * 0.25)
+                
+                # Validation par la Quinte
                 fifth_idx = (i + 7) % 12
                 if cv[fifth_idx] > 0.5: score += 0.1
+                
                 if score > best_overall_score:
                     best_overall_score = score
                     best_key = f"{NOTES_LIST[i]} {mode}"
@@ -118,7 +136,6 @@ def solve_key_sniper(chroma_vector, bass_vector):
 def process_audio_precision(file_obj, file_name, _progress_callback=None):
     try:
         ext = file_name.split('.')[-1].lower()
-        # OPTIMISATION MÉMOIRE : Lecture directe depuis le buffer Streamlit (file_obj)
         if ext == 'm4a':
             audio = AudioSegment.from_file(file_obj, format="m4a")
             samples = np.array(audio.get_array_of_samples()).astype(np.float32)
@@ -129,7 +146,6 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
                 y = librosa.resample(y, orig_sr=sr, target_sr=22050)
                 sr = 22050
         else:
-            # Librosa accepte directement l'objet UploadedFile (file_obj)
             y, sr = librosa.load(file_obj, sr=22050, mono=True)
         
         duration = librosa.get_duration(y=y, sr=sr)
@@ -150,6 +166,7 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             b_seg = get_bass_priority(y[idx_start:idx_end], sr)
             res = solve_key_sniper(c_avg, b_seg)
             
+            # --- POIDS INTRO / OUTRO (30 secondes) ---
             weight = 1.2 if (start < 30 or start > (duration - 30)) else 1.0
             votes[res['key']] += int(res['score'] * 100 * weight)
             timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
@@ -212,7 +229,6 @@ st.title("🎯 RCDJ228 SNIPER M3")
 uploaded_files = st.file_uploader("📂 Déposez vos fichiers audio", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
 if uploaded_files:
-    # --- BARRE DE PROGRESSION GÉNÉRALE ---
     total_files = len(uploaded_files)
     st.write(f"### 📈 Progression Globale ({total_files} fichiers)")
     global_progress_bar = st.progress(0)
@@ -221,7 +237,6 @@ if uploaded_files:
     results_container = st.container()
     files_done = 0
     
-    # Traitement des fichiers
     for f in uploaded_files:
         if f.name in st.session_state.processed_files:
             files_done += 1
@@ -232,10 +247,8 @@ if uploaded_files:
         while not success:
             try:
                 global_status_text.info(f"Analyse en cours : `{f.name}` ({files_done + 1}/{total_files})")
-                
                 with st.status(f"🚀 Sniper scan : `{f.name}`", expanded=False) as status:
                     inner_bar = st.progress(0)
-                    # OPTIMISATION MÉMOIRE : On passe 'f' directement au lieu de 'f.getvalue()'
                     data = process_audio_precision(f, f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
                     
                     if data:
@@ -254,7 +267,6 @@ if uploaded_files:
 
     global_status_text.success(f"🏁 Mission terminée ! {total_files} fichiers analysés avec précision.")
 
-    # Affichage des résultats stockés
     with results_container:
         for i, (name, data) in enumerate(reversed(st.session_state.processed_files.items())):
             st.markdown(f"<div class='file-header'>📊 {data['name']}</div>", unsafe_allow_html=True)
@@ -275,7 +287,6 @@ if uploaded_files:
                                 <script>{get_chord_js(btn_id, data['key'])}</script>""", height=110)
             st.markdown("<br>", unsafe_allow_html=True)
 
-# Bouton pour réinitialiser
 if st.sidebar.button("🗑️ Vider l'historique"):
     st.session_state.processed_files = {}
     st.rerun()
