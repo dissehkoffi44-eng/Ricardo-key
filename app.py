@@ -199,6 +199,40 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         except: pass
 
     return res_obj
+    
+    def get_chord_js(button_id, key_name):
+    # Mapping des notes vers les fréquences (Hz)
+    freqs = {
+        'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23,
+        'F#': 369.99, 'G': 392.00, 'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88
+    }
+    
+    note, mode = key_name.split()
+    root = freqs[note]
+    
+    # Calcul des fréquences de la triade (Fondamentale, Tierce, Quinte)
+    if mode == 'major':
+        chord = [root, root * 1.25, root * 1.5] # Tierce majeure
+    else:
+        chord = [root, root * 1.189, root * 1.5] # Tierce mineure
+
+    return f"""
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        document.getElementById("{button_id}").addEventListener("click", () => {{
+            {json.dumps(chord)}.forEach(f => {{
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.value = f;
+                osc.type = "sine";
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 1.5);
+            }});
+        }});
+    """
 
 # --- INTERFACE ---
 st.title("🎯 RCDJ228 SNIPER M3")
