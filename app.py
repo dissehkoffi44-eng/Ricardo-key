@@ -199,7 +199,7 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
         except: pass
 
     return res_obj
-    def get_chord_js(button_id, key_name):
+def get_chord_js(button_id, key_name):
     # Mapping des notes vers les fréquences (Hz)
     freqs = {
         'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13, 'E': 329.63, 'F': 349.23,
