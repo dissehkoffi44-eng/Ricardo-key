@@ -86,7 +86,7 @@ def apply_sniper_filters(y, sr):
     return lfilter(b, a, y_harm)
 
 def get_bass_priority(y, sr):
-    nyq = 0.5 * sr
+    nyq = 0.8 * sr
     b, a = butter(2, 150/nyq, btype='low')
     y_bass = lfilter(b, a, y)
     chroma_bass = librosa.feature.chroma_cqt(y=y_bass, sr=sr, n_chroma=12)
