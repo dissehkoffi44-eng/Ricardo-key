@@ -80,28 +80,31 @@ def get_bass_priority(y, sr):
     chroma_bass = librosa.feature.chroma_cqt(y=y_bass, sr=sr, n_chroma=12)
     return np.mean(chroma_bass, axis=1)
 
-def solve_key_sniper(chroma_vector, bass_vector):
+def solve_key_sniper_afro_edition(chroma_vector, bass_vector):
+    # On booste l'importance de la basse (fondamentale) car dans l'Afrobeat/Amapiano, 
+    # c'est elle qui définit la structure.
+    
     best_overall_score = -1
     best_key = "Unknown"
     
-    # Normalisation
     cv = (chroma_vector - chroma_vector.min()) / (chroma_vector.max() - chroma_vector.min() + 1e-6)
     bv = (bass_vector - bass_vector.min()) / (bass_vector.max() - bass_vector.min() + 1e-6)
     
-    # On ne boucle que sur sniper_triads
     p_data = PROFILES["sniper_triads"]
     for mode in ["major", "minor"]:
         for i in range(12):
             reference = np.roll(p_data[mode], i)
-            # Calcul de corrélation stricte sur les notes de la triade
             score = np.corrcoef(cv, reference)[0, 1]
             
-            # Bonus Basse : Si la fondamentale est présente en basse
-            if bv[i] > 0.7: score += 0.3
+            # --- OPTIMISATION AFRO/AMAPIANO ---
+            # On donne un poids énorme (0.5 au lieu de 0.3) à la basse
+            if bv[i] > 0.6: 
+                score += (bv[i] * 0.5) 
             
-            # Bonus Quinte : Renforcement de la stabilité
+            # Dans l'Amapiano, la quinte (i+7) est souvent jouée par le Log Drum
             fifth_idx = (i + 7) % 12
-            if cv[fifth_idx] > 0.6: score += 0.1
+            if bv[fifth_idx] > 0.5:
+                score += 0.15
             
             if score > best_overall_score:
                 best_overall_score = score
