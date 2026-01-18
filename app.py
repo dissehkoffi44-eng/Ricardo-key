@@ -82,23 +82,32 @@ def apply_sniper_filters(y, sr):
     return lfilter(b, a, y_harm)
 
 def get_root_note_pyin(y, sr):
-    """Analyse de la fréquence fondamentale (PYIN) pour identifier la note d'ancrage."""
-    # On analyse un segment central de 20s pour gagner en rapidité
-    start_sample = len(y) // 2
-    end_sample = start_sample + (sr * 20)
-    y_chunk = y[start_sample:min(end_sample, len(y))]
-    
-    f0, voiced_flag, voiced_probs = librosa.pyin(y_chunk, 
-                                                 fmin=librosa.note_to_hz('C2'), 
-                                                 fmax=librosa.note_to_hz('C5'), 
-                                                 sr=sr, hop_length=1024)
-    # On ne garde que les notes avec une probabilité de confiance > 80%
-    valid_f0 = f0[voiced_flag & (voiced_probs > 0.8)]
-    if len(valid_f0) == 0: return None
-    
-    notes = librosa.hz_to_note(valid_f0)
-    clean_notes = [n.replace(n[-1], '') for n in notes] # On enlève l'octave
-    return Counter(clean_notes).most_common(1)[0][0]
+    """Analyse améliorée de la fréquence fondamentale pour identifier la note d'ancrage."""
+    try:
+        duration = librosa.get_duration(y=y, sr=sr)
+        # On analyse 25s au milieu du morceau pour plus de stabilité
+        start_sec = max(0, (duration / 2) - 12)
+        y_chunk = y[int(start_sec * sr):int((start_sec + 25) * sr)]
+        
+        if np.max(np.abs(y_chunk)) < 0.02: return "Silence"
+
+        f0, voiced_flag, voiced_probs = librosa.pyin(
+            y_chunk, 
+            fmin=librosa.note_to_hz('C2'), 
+            fmax=librosa.note_to_hz('C5'), 
+            sr=sr, hop_length=1024
+        )
+        
+        # Seuil de confiance baissé à 0.6 pour éviter d'afficher "None"
+        valid_f0 = f0[voiced_flag & (voiced_probs > 0.6)]
+        
+        if len(valid_f0) == 0: return "???"
+        
+        notes = librosa.hz_to_note(valid_f0)
+        clean_notes = [n[:-1] if n[-1].isdigit() else n for n in notes]
+        return Counter(clean_notes).most_common(1)[0][0]
+    except:
+        return "N/A"
 
 def solve_key_sniper(chroma_vector, bass_vector, root_hint=None):
     best_overall_score = -1
