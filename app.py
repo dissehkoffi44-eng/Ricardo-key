@@ -149,7 +149,7 @@ def process_audio(audio_file, file_name, progress_placeholder):
 
     primary_key = most_common[0][0]
     total_votes = sum(votes.values())
-    mod_detected = len(most_common) > 1 and (votes[most_common[1][0]] / total_votes) > 0.25
+    mod_detected = len(most_common) > 1 and (votes[most_common[1][0]] / total_votes) > 0.35
     
     chroma_global = np.mean(librosa.feature.chroma_cqt(y=y_filt, sr=sr, tuning=tuning), axis=1)
     bass_global = get_bass_priority(y, sr)
