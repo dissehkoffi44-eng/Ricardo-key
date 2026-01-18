@@ -115,11 +115,12 @@ def solve_key_sniper(chroma_vector, bass_vector):
                     best_key = f"{NOTES_LIST[i]} {mode}"
     return {"key": best_key, "score": best_overall_score}
 
-def process_audio_precision(file_bytes, file_name, _progress_callback=None):
+def process_audio_precision(file_obj, file_name, _progress_callback=None):
     try:
         ext = file_name.split('.')[-1].lower()
+        # OPTIMISATION MÉMOIRE : Lecture directe depuis le buffer Streamlit (file_obj)
         if ext == 'm4a':
-            audio = AudioSegment.from_file(io.BytesIO(file_bytes), format="m4a")
+            audio = AudioSegment.from_file(file_obj, format="m4a")
             samples = np.array(audio.get_array_of_samples()).astype(np.float32)
             if audio.channels == 2: samples = samples.reshape((-1, 2)).mean(axis=1)
             y = samples / (2**15)
@@ -128,8 +129,8 @@ def process_audio_precision(file_bytes, file_name, _progress_callback=None):
                 y = librosa.resample(y, orig_sr=sr, target_sr=22050)
                 sr = 22050
         else:
-            with io.BytesIO(file_bytes) as buf:
-                y, sr = librosa.load(buf, sr=22050, mono=True)
+            # Librosa accepte directement l'objet UploadedFile (file_obj)
+            y, sr = librosa.load(file_obj, sr=22050, mono=True)
         
         duration = librosa.get_duration(y=y, sr=sr)
         tuning = librosa.estimate_tuning(y=y, sr=sr)
@@ -211,7 +212,7 @@ st.title("🎯 RCDJ228 SNIPER M3")
 uploaded_files = st.file_uploader("📂 Déposez vos fichiers audio", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
 if uploaded_files:
-    # --- BARRE DE PROGRESSION GÉNÉRALE (TOUT EN HAUT) ---
+    # --- BARRE DE PROGRESSION GÉNÉRALE ---
     total_files = len(uploaded_files)
     st.write(f"### 📈 Progression Globale ({total_files} fichiers)")
     global_progress_bar = st.progress(0)
@@ -230,12 +231,12 @@ if uploaded_files:
         success = False
         while not success:
             try:
-                # Mise à jour du texte de statut global
                 global_status_text.info(f"Analyse en cours : `{f.name}` ({files_done + 1}/{total_files})")
                 
                 with st.status(f"🚀 Sniper scan : `{f.name}`", expanded=False) as status:
                     inner_bar = st.progress(0)
-                    data = process_audio_precision(f.getvalue(), f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
+                    # OPTIMISATION MÉMOIRE : On passe 'f' directement au lieu de 'f.getvalue()'
+                    data = process_audio_precision(f, f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
                     
                     if data:
                         st.session_state.processed_files[f.name] = data
@@ -274,7 +275,7 @@ if uploaded_files:
                                 <script>{get_chord_js(btn_id, data['key'])}</script>""", height=110)
             st.markdown("<br>", unsafe_allow_html=True)
 
-# Bouton pour réinitialiser si besoin
+# Bouton pour réinitialiser
 if st.sidebar.button("🗑️ Vider l'historique"):
     st.session_state.processed_files = {}
     st.rerun()
