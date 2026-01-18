@@ -29,7 +29,6 @@ CAMELOT_MAP = {
     'F# minor': '11A', 'G minor': '6A', 'G# minor': '1A', 'A minor': '8A', 'A# minor': '3A', 'B minor': '10A'
 }
 
-# Profils Code 2 + Profil Triade du Code 1
 PROFILES = {
     "krumhansl": {
         "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
@@ -69,12 +68,8 @@ st.markdown("""
         background: #161b22; border-radius: 15px; padding: 20px; text-align: center; border: 1px solid #30363d;
         height: 100%; transition: 0.3s;
     }
-    .sniper-badge {
-        background: #238636; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.7em;
-    }
-    .fortress-badge {
-        background: #b91c1c; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.7em; margin-left:5px;
-    }
+    .sniper-badge { background: #238636; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.7em; }
+    .fortress-badge { background: #b91c1c; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.7em; margin-left:5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -105,7 +100,6 @@ def solve_key_engine(chroma_vector, bass_vector, profile_set):
             score = np.corrcoef(cv, ref)[0, 1]
             if bv[i] > 0.6: score += 0.2
             if cv[(i + 7) % 12] > 0.5: score += 0.1
-            
             if score > best_score:
                 best_score = score
                 best_key = f"{NOTES_LIST[i]} {mode}"
@@ -129,37 +123,38 @@ def process_audio(audio_file, file_name, progress_placeholder):
 
     update_prog(50, "Analyse Harmonique Multi-Profils")
     step, timeline, votes = 6, [], Counter()
-    segments = range(0, int(duration) - step, 2)
+    segments = range(0, max(1, int(duration) - step), 2)
     
     for i, start in enumerate(segments):
         idx_start, idx_end = int(start * sr), int((start + step) * sr)
         seg = y_filt[idx_start:idx_end]
-        if np.max(np.abs(seg)) < 0.01: continue
+        if len(seg) == 0 or np.max(np.abs(seg)) < 0.005: continue
         
         c_raw = librosa.feature.chroma_cqt(y=seg, sr=sr, tuning=tuning, n_chroma=24, bins_per_octave=24)
         c_avg = np.mean((c_raw[::2, :] + c_raw[1::2, :]) / 2, axis=1)
         b_seg = get_bass_priority(y[idx_start:idx_end], sr)
         
-        # Utilisation des profils Code 2 pour le scan temporel
         res = solve_key_engine(c_avg, b_seg, PROFILES["krumhansl"])
         weight = 2.0 if (start < 10 or start > (duration - 15)) else 1.0
         votes[res['key']] += int(res['score'] * 100 * weight)
         timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
-        
-        update_prog(50 + int((i / len(segments)) * 40), "Calcul chirurgical")
+        update_prog(50 + int((i / max(1, len(segments))) * 40), "Calcul chirurgical")
 
     update_prog(95, "Synthèse et Arbitrage Forteresse")
     most_common = votes.most_common(2)
+    
+    # SÉCURITÉ : Si aucune note détectée
+    if not most_common:
+        return {"key": "C major", "camelot": "8B", "conf": 0, "tempo": 0, "tuning": 440, "timeline": [], "chroma": np.zeros(12), "modulation": False, "arbitration": False, "target_key": None, "target_camelot": None, "name": file_name}
+
     primary_key = most_common[0][0]
     total_votes = sum(votes.values())
     mod_detected = len(most_common) > 1 and (votes[most_common[1][0]] / total_votes) > 0.25
     
-    # --- LOGIQUE D'ARBITRAGE DU CODE 1 ---
     chroma_global = np.mean(librosa.feature.chroma_cqt(y=y_filt, sr=sr, tuning=tuning), axis=1)
     bass_global = get_bass_priority(y, sr)
     
     if mod_detected:
-        # Le Code 1 (Forteresse - Triad Only) prend la décision finale
         fortress_res = solve_key_engine(chroma_global, bass_global, SNIPER_TRIADS)
         final_key = fortress_res['key']
         arbitration = True
@@ -167,13 +162,15 @@ def process_audio(audio_file, file_name, progress_placeholder):
         final_key = primary_key
         arbitration = False
 
-    final_conf = int(np.mean([t['Conf'] for t in timeline if t['Note'] == final_key]) * 100)
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    # CORRECTION VALUEERROR : Calcul de confiance sécurisé
+    relevant_confs = [t['Conf'] for t in timeline if t['Note'] == final_key]
+    final_conf = int(np.mean(relevant_confs) * 100) if relevant_confs else 0
 
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
     res_obj = {
         "key": final_key, "camelot": CAMELOT_MAP.get(final_key, "??"),
         "conf": min(final_conf, 99), "tempo": int(float(tempo)),
-        "tuning": round(440 * (2**(tuning/12)), 1), "timeline": timeline,
+        "tuning": round(440 * (2**(tuning/12)), 1), "timeline": timeline if timeline else [{"Temps":0, "Note":final_key, "Conf":0}],
         "chroma": chroma_global, "modulation": mod_detected,
         "arbitration": arbitration,
         "target_key": most_common[1][0] if mod_detected else None,
@@ -181,17 +178,15 @@ def process_audio(audio_file, file_name, progress_placeholder):
         "name": file_name
     }
     
-    # Notification Telegram
     if TELEGRAM_TOKEN and CHAT_ID:
         try:
-            status = "🛡️ FORTERESSE ARBITRAGE" if arbitration else "✅ STABLE"
-            msg = f"🎯 *SNIPER HYBRID*\n📂 `{file_name}`\n🎹 `{final_key.upper()}` ({res_obj['camelot']})\n🔥 CONF: `{res_obj['conf']}%` | {status}"
+            status = "🛡️ FORTERESSE" if arbitration else "✅ STABLE"
+            msg = f"🎯 *SNIPER HYBRID*\n📂 `{file_name}`\n🎹 `{final_key.upper()}`\n🔥 CONF: `{res_obj['conf']}%` | {status}"
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': msg, 'parse_mode': 'Markdown'})
         except: pass
 
-    update_prog(100, "Analyse terminée")
-    status_text.empty()
-    progress_bar.empty()
+    update_prog(100, "Terminé")
+    status_text.empty(); progress_bar.empty()
     del y, y_filt; gc.collect()
     return res_obj
 
@@ -215,7 +210,6 @@ def get_chord_js(btn_id, key_str):
 
 # --- DASHBOARD ---
 st.title("🎯 RCDJ228 SNIPER M3 - HYBRID")
-st.markdown("#### Moteur Code 2 + Arbitrage Triade (Code 1) en cas de modulation")
 
 uploaded_files = st.file_uploader("📥 Déposez vos fichiers", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
@@ -223,16 +217,12 @@ if uploaded_files:
     progress_zone = st.container()
     for f in reversed(uploaded_files):
         data = process_audio(f, f.name, progress_zone)
-        
         st.markdown(f"<div class='file-header'>📂 {data['name']}</div>", unsafe_allow_html=True)
         color = "linear-gradient(135deg, #065f46, #064e3b)" if not data['arbitration'] else "linear-gradient(135deg, #7f1d1d, #450a0a)"
         
         st.markdown(f"""
             <div class="report-card" style="background:{color};">
-                <p style="letter-spacing:5px; opacity:0.8; font-size:0.8em;">
-                    SNIPER v5.0 <span class="sniper-badge">READY</span>
-                    { '<span class="fortress-badge">TRIAD JUDGE ACTIVE</span>' if data['arbitration'] else '' }
-                </p>
+                <p style="letter-spacing:5px; opacity:0.8; font-size:0.8em;">SNIPER v5.0 { '<span class="fortress-badge">TRIAD JUDGE ACTIVE</span>' if data['arbitration'] else '' }</p>
                 <h1 style="font-size:5.5em; margin:10px 0; font-weight:900;">{data['key'].upper()}</h1>
                 <p style="font-size:1.5em; opacity:0.9;">CAMELOT: <b>{data['camelot']}</b> &nbsp; | &nbsp; CONFIANCE: <b>{data['conf']}%</b></p>
                 {f"<div class='modulation-alert'>⚠️ MODULATION DÉTECTÉE : {data['target_key'].upper()} ({data['target_camelot']})</div>" if data['modulation'] else ""}
@@ -249,14 +239,14 @@ if uploaded_files:
 
         c1, c2 = st.columns([2, 1])
         with c1:
-            fig_tl = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
-            fig_tl.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_tl, use_container_width=True)
+            if data['timeline']:
+                fig_tl = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
+                fig_tl.update_layout(height=300, margin=dict(l=0, r=0, t=30, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_tl, use_container_width=True)
         with c2:
             fig_radar = go.Figure(data=go.Scatterpolar(r=data['chroma'], theta=NOTES_LIST, fill='toself', line_color='#10b981'))
             fig_radar.update_layout(template="plotly_dark", height=300, margin=dict(l=40, r=40, t=30, b=20), polar=dict(radialaxis=dict(visible=False)), paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_radar, use_container_width=True)
-        
         st.markdown("<hr style='border-color: #30363d; margin-bottom:40px;'>", unsafe_allow_html=True)
 
 with st.sidebar:
