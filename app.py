@@ -1,256 +1,247 @@
+# RCDJ228 SNIPER M3 - VERSION ULTIME "ROOT & TRIAD"
 import streamlit as st
 import librosa
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from collections import Counter
 import io
-import streamlit.components.v1 as components
+import os
 import requests
 import gc
+import json
+import streamlit.components.v1 as components
 from scipy.signal import butter, lfilter
+from datetime import datetime
+from pydub import AudioSegment
 
-# --- CONFIGURATION SÉCURISÉE ---
-TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN", "7751365982:AAFLbeRoPsDx5OyIOlsgHcGKpI12hopzCYo")
-CHAT_ID = st.secrets.get("CHAT_ID", "-1003602454394")
+# --- FORCE FFMEG PATH (WINDOWS FIX) ---
+if os.path.exists(r'C:\ffmpeg\bin'):
+    os.environ["PATH"] += os.pathsep + r'C:\ffmpeg\bin'
 
-# --- CONFIGURATION PAGE ---
-st.set_page_config(page_title="RCDJ228 Key Ultimate", page_icon="🎧", layout="wide")
+# --- CONFIGURATION SYSTÈME ---
+st.set_page_config(page_title="RCDJ228 SNIPER M3", page_icon="🎯", layout="wide")
 
-# --- CONSTANTES HARMONIQUES ---
-BASE_CAMELOT_MINOR = {'Ab':'1A','G#':'1A','Eb':'2A','D#':'2A','Bb':'3A','A#':'3A','F':'4A','C':'5A','G':'6A','D':'7A','A':'8A','E':'9A','B':'10A','F#':'11A','Gb':'11A','Db':'12A','C#':'12A'}
-BASE_CAMELOT_MAJOR = {'B':'1B','F#':'2B','Gb':'2B','Db':'3B','C#':'3B','Ab':'4B','G#':'4B','Eb':'5B','D#':'5B','Bb':'6B','A#':'6B','F':'7B','C':'8B','G':'9B','D':'10B','A':'11B','E':'12B'}
+# Récupération des secrets
+TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
+CHAT_ID = st.secrets.get("CHAT_ID")
+
+# --- RÉFÉRENTIELS HARMONIQUES ---
 NOTES_LIST = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 NOTES_ORDER = [f"{n} {m}" for n in NOTES_LIST for m in ['major', 'minor']]
 
-# Profils Krumhansl-Schmuckler
+CAMELOT_MAP = {
+    'C major': '8B', 'C# major': '3B', 'D major': '10B', 'D# major': '5B', 'E major': '12B', 'F major': '7B',
+    'F# major': '2B', 'G major': '9B', 'G# major': '4B', 'A major': '11B', 'A# major': '6B', 'B major': '1B',
+    'C minor': '5A', 'C# minor': '12A', 'D minor': '7A', 'D# minor': '2A', 'E minor': '9A', 'F minor': '4A',
+    'F# minor': '11A', 'G minor': '6A', 'G# minor': '1A', 'A minor': '8A', 'A# minor': '3A', 'B minor': '10A'
+}
+
 PROFILES = {
-    "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
-    "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+    "sniper_triads": {
+        "major": [1.0, 0, 0, 0, 1.0, 0, 0, 1.0, 0, 0, 0, 0],
+        "minor": [1.0, 0, 0, 1.0, 0, 0, 0, 1.0, 0, 0, 0, 0]
+    },
+    "krumhansl": {
+        "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
+        "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
+    }
 }
 
 # --- STYLES CSS ---
 st.markdown("""
     <style>
-    .main { background-color: #0e1117; color: white; }
-    .metric-container { background: #1a1c24; padding: 20px; border-radius: 15px; border: 1px solid #333; text-align: center; height: 100%; transition: 0.3s; }
-    .metric-container:hover { border-color: #6366F1; transform: translateY(-3px); }
-    .value-custom { font-size: 1.8em; font-weight: 800; color: #FFFFFF; }
-    .final-decision-box { padding: 40px; border-radius: 25px; text-align: center; margin: 15px 0; border: 1px solid rgba(255,255,255,0.1); }
-    .solid-note-box { background: rgba(99, 102, 241, 0.1); border: 1px dashed #6366F1; border-radius: 15px; padding: 20px; text-align: center; margin-bottom: 20px; }
+    .main { background-color: #0b0e14; }
+    .report-card { 
+        padding: 40px; border-radius: 30px; text-align: center; color: white; 
+        border: 1px solid rgba(99, 102, 241, 0.3); box-shadow: 0 15px 45px rgba(0,0,0,0.6);
+        margin-bottom: 20px;
+    }
+    .file-header {
+        background: #1f2937; color: #10b981; padding: 10px 20px; border-radius: 10px;
+        font-family: 'JetBrains Mono', monospace; font-weight: bold; margin-bottom: 10px;
+        border-left: 5px solid #10b981;
+    }
+    .root-hint {
+        background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 5px 12px;
+        border-radius: 20px; font-size: 0.8em; border: 1px solid #10b981;
+    }
+    .metric-box {
+        background: #161b22; border-radius: 15px; padding: 20px; text-align: center; border: 1px solid #30363d;
+        height: 100%;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FONCTIONS LOGIQUES ---
-
-def apply_bandpass_filter(y, sr):
+# --- MOTEURS DE CALCUL ---
+def apply_sniper_filters(y, sr):
+    y_harm = librosa.effects.harmonic(y, margin=4.0)
     nyq = 0.5 * sr
-    low, high = 50 / nyq, 1500 / nyq
-    b, a = butter(4, [low, high], btype='band')
-    return lfilter(b, a, y)
+    b, a = butter(4, [80/nyq, 5000/nyq], btype='band')
+    return lfilter(b, a, y_harm)
 
-def get_camelot_pro(key_mode_str):
+def get_root_note_pyin(y, sr):
+    """Analyse de la fréquence fondamentale (PYIN) pour identifier la note d'ancrage."""
+    # On analyse un segment central de 20s pour gagner en rapidité
+    start_sample = len(y) // 2
+    end_sample = start_sample + (sr * 20)
+    y_chunk = y[start_sample:min(end_sample, len(y))]
+    
+    f0, voiced_flag, voiced_probs = librosa.pyin(y_chunk, 
+                                                 fmin=librosa.note_to_hz('C2'), 
+                                                 fmax=librosa.note_to_hz('C5'), 
+                                                 sr=sr, hop_length=1024)
+    # On ne garde que les notes avec une probabilité de confiance > 80%
+    valid_f0 = f0[voiced_flag & (voiced_probs > 0.8)]
+    if len(valid_f0) == 0: return None
+    
+    notes = librosa.hz_to_note(valid_f0)
+    clean_notes = [n.replace(n[-1], '') for n in notes] # On enlève l'octave
+    return Counter(clean_notes).most_common(1)[0][0]
+
+def solve_key_sniper(chroma_vector, bass_vector, root_hint=None):
+    best_overall_score = -1
+    best_key = "Unknown"
+    
+    cv = (chroma_vector - chroma_vector.min()) / (chroma_vector.max() - chroma_vector.min() + 1e-6)
+    bv = (bass_vector - bass_vector.min()) / (bass_vector.max() - bass_vector.min() + 1e-6)
+    
+    for p_name, p_data in PROFILES.items():
+        for mode in ["major", "minor"]:
+            for i in range(12):
+                note_name = NOTES_LIST[i]
+                reference = np.roll(p_data[mode], i)
+                score = np.corrcoef(cv, reference)[0, 1]
+                
+                # --- BOOST PYIN (ROOT VERIFIER) ---
+                if root_hint and note_name == root_hint:
+                    score += 0.25 # Bonus massif si la fondamentale PYIN correspond à la tonale
+
+                # --- BOOST SNIPER TRIAD ---
+                if p_name == "sniper_triads": score *= 1.25 
+
+                # Logique mineure
+                if mode == "minor":
+                    dom_idx, leading_tone = (i + 7) % 12, (i + 11) % 12
+                    if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.35 
+                
+                # Priorité Basse
+                if bv[i] > 0.6: score += (bv[i] * 0.25)
+                
+                if score > best_overall_score:
+                    best_overall_score = score
+                    best_key = f"{note_name} {mode}"
+                    
+    return {"key": best_key, "score": best_overall_score}
+
+def process_audio_precision(file_bytes, file_name, _progress_callback=None):
     try:
-        parts = key_mode_str.split(" ")
-        key, mode = parts[0], parts[1].lower()
-        return BASE_CAMELOT_MINOR.get(key, "??") if mode == 'minor' else BASE_CAMELOT_MAJOR.get(key, "??")
-    except: return "??"
+        with io.BytesIO(file_bytes) as buf:
+            y, sr = librosa.load(buf, sr=22050, mono=True)
+    except: return None
 
-def solve_key(chroma_avg):
-    best_score, best_key, best_root, best_mode = -1, "", 0, "major"
-    for mode, profile in PROFILES.items():
-        for i in range(12):
-            score = np.corrcoef(chroma_avg, np.roll(profile, i))[0, 1]
-            if score > best_score:
-                best_score = score
-                best_root = i
-                best_mode = mode
-                best_key = f"{NOTES_LIST[i]} {mode}"
-    return {"key": best_key, "score": best_score, "root": best_root, "mode": best_mode}
+    duration = librosa.get_duration(y=y, sr=sr)
+    y_filt = apply_sniper_filters(y, sr)
+    
+    # ÉTAPE 1 : Root Sniper (PYIN)
+    if _progress_callback: _progress_callback(10, "Extraction de la Root Note (PYIN)...")
+    root_hint = get_root_note_pyin(y, sr)
+    
+    # ÉTAPE 2 : Analyse Harmonique par Segments
+    tuning = librosa.estimate_tuning(y=y, sr=sr)
+    step, timeline, votes = 2, [], Counter()
+    segments = list(range(0, max(1, int(duration) - step), 2))
+    
+    for idx, start in enumerate(segments):
+        if _progress_callback:
+            prog = 15 + int((idx / len(segments)) * 80)
+            _progress_callback(prog, f"Analyse Sniper : {start}s")
 
-def refine_with_harmonic_rules(note_solide_obj, key_fin_obj):
-    root_s, mode_s = note_solide_obj['root'], note_solide_obj['mode']
-    root_f, mode_f = key_fin_obj['root'], key_fin_obj['mode']
-    is_dominante = (root_f + 5) % 12 == root_s
-    if is_dominante and mode_f == "major" and mode_s == "minor":
-        return note_solide_obj['key'], "Dominante V"
-    if root_s == root_f and mode_s == mode_f:
-        return key_fin_obj['key'], "Résolue"
-    return note_solide_obj['key'], "Stable"
-
-def get_sine_witness(note_mode_str, key_suffix=""):
-    if note_mode_str == "N/A": return ""
-    parts = note_mode_str.split(' ')
-    note, mode = parts[0], parts[1].lower()
-    unique_id = f"play_{note}_{mode}_{key_suffix}".replace("#", "s").replace(" ", "")
-    return components.html(f"""
-    <button id="{unique_id}" style="background:#6366F1;color:white;border:none;border-radius:20px;padding:10px 20px;cursor:pointer;font-weight:bold;width:100%;">▶ TEST {note} {mode[:3].upper()}</button>
-    <script>
-    const freqs = {{'C':261.6,'C#':277.2,'D':293.7,'D#':311.1,'E':329.6,'F':349.2,'F#':370.0,'G':392.0,'G#':415.3,'A':440.0,'A#':466.2,'B':493.9}};
-    let ctx = null;
-    document.getElementById('{unique_id}').onclick = function() {{
-        if(!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const now = ctx.currentTime;
-        const intervals = '{mode}' === 'minor' ? [0, 3, 7, 12] : [0, 4, 7, 12];
-        intervals.forEach((inter, i) => {{
-            const osc = ctx.createOscillator(); const g = ctx.createGain();
-            osc.type = 'triangle'; osc.frequency.setValueAtTime(freqs['{note}'] * Math.pow(2, inter/12), now + (i*0.02));
-            g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.3, now+0.05); g.gain.exponentialRampToValueAtTime(0.01, now+2);
-            osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now+2);
-        }});
-    }};
-    </script>""", height=50)
-
-# --- COEUR DE L'ANALYSE ---
-
-@st.cache_data(show_spinner=False, max_entries=5)
-def get_full_analysis(file_bytes, file_name):
-    try:
-        y, sr = librosa.load(io.BytesIO(file_bytes), sr=22050)
-        tuning = librosa.estimate_tuning(y=y, sr=sr)
-        y_harm = librosa.effects.harmonic(y, margin=3.0)
-        y_filt = apply_bandpass_filter(y_harm, sr)
-        duration = librosa.get_duration(y=y, sr=sr)
-
-        step, timeline = 8, []
-        votes = Counter()
+        idx_s, idx_e = int(start * sr), int((start + step) * sr)
+        seg = y_filt[idx_s:idx_e]
+        if len(seg) < 1000 or np.max(np.abs(seg)) < 0.01: continue
         
-        for start in range(0, int(duration) - step, step):
-            y_seg = y_filt[int(start*sr):int((start+step)*sr)]
-            rms = np.mean(librosa.feature.rms(y=y_seg))
-            if rms < 0.005: continue 
-            
-            chroma = librosa.feature.chroma_cqt(y=y_seg, sr=sr, tuning=tuning)
-            res_obj = solve_key(np.mean(chroma, axis=1))
-            key, score = res_obj['key'], res_obj['score']
-            
-            weight = int(score * 100) + int(rms * 500)
-            votes[key] += weight
-            timeline.append({"Temps": start, "Note": key, "Conf": round(score*100, 1)})
-
-        if not timeline: return None
-        df_tl = pd.DataFrame(timeline)
+        c_raw = librosa.feature.chroma_cqt(y=seg, sr=sr, tuning=tuning, n_chroma=24, bins_per_octave=24)
+        c_avg = np.mean((c_raw[::2, :] + c_raw[1::2, :]) / 2, axis=1)
         
-        note_solide_str = votes.most_common(1)[0][0]
-        ns_parts = note_solide_str.split(' ')
-        note_solide_obj = {
-            "key": note_solide_str, 
-            "root": NOTES_LIST.index(ns_parts[0]), 
-            "mode": ns_parts[1].lower()
-        }
-
-        y_end = y_harm[int(max(0, duration-8)*sr):]
-        chroma_end = np.mean(librosa.feature.chroma_cens(y=y_end, sr=sr, tuning=tuning), axis=1)
-        key_fin_obj = solve_key(chroma_end)
-
-        final_decision, type_res = refine_with_harmonic_rules(note_solide_obj, key_fin_obj)
-        is_res = True if type_res != "Stable" else False
-
-        conf_finale = int(df_tl[df_tl['Note'] == final_decision]['Conf'].mean())
-        if is_res: conf_finale = min(conf_finale + 5, 100)
-
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        bg = "linear-gradient(135deg, #1D976C, #93F9B9)" if conf_finale > 82 else "linear-gradient(135deg, #2193B0, #6DD5ED)"
+        # Basses (filtre passe-bas direct sur segment)
+        nyq = 0.5 * sr
+        b, a = butter(2, 150/nyq, btype='low')
+        b_seg = np.mean(librosa.feature.chroma_cqt(y=lfilter(b, a, y[idx_s:idx_e]), sr=sr, n_chroma=12), axis=1)
         
-        # --- GRAPHIQUE POUR TELEGRAM (COULEUR BLANCHE) ---
-        fig = px.line(df_tl, x="Temps", y="Note", markers=True, title=f"Stabilité: {file_name}")
-        fig.update_traces(line=dict(color="white"), marker=dict(color="white")) 
-        fig.update_layout(
-            template="plotly_dark", paper_bgcolor='#0e1117', plot_bgcolor='#0e1117',
-            yaxis={'categoryorder':'array', 'categoryarray':NOTES_ORDER},
-            margin=dict(l=60, r=30, t=80, b=60)
-        )
+        res = solve_key_sniper(c_avg, b_seg, root_hint=root_hint)
+        weight = 3.0 if (start < 10 or start > (duration - 15)) else 1.0
+        votes[res['key']] += int(res['score'] * 100 * weight)
+        timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
 
-        res = {
-            "file_name": file_name, 
-            "tempo": int(float(tempo)),
-            "tuning": round(tuning, 2),
-            "rec": {"note": final_decision, "conf": conf_finale, "bg": bg, "type": type_res},
-            "note_solide": note_solide_str, 
-            "is_res": is_res, 
-            "timeline": timeline,
-            "plot_bytes": fig.to_image(format="png", width=1200, height=600, scale=2)
-        }
-        
-        del y, y_harm, y_filt, y_end, df_tl, chroma
-        gc.collect()
-        return res
-    except Exception as e:
-        return {"error": str(e), "file_name": file_name}
+    if not votes: return None
+
+    most_common = votes.most_common(2)
+    final_key = most_common[0][0]
+    final_conf = int(np.mean([t['Conf'] for t in timeline if t['Note'] == final_key]) * 100)
+    
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    
+    res_obj = {
+        "key": final_key, "camelot": CAMELOT_MAP.get(final_key, "??"),
+        "conf": min(final_conf, 99), "tempo": int(float(tempo)),
+        "root_hint": root_hint, "name": file_name, "timeline": timeline,
+        "tuning": round(440 * (2**(tuning/12)), 1),
+        "chroma": np.mean(librosa.feature.chroma_cqt(y=y_filt, sr=sr, tuning=tuning), axis=1).tolist()
+    }
+    
+    # Telegram 
+    if TELEGRAM_TOKEN and CHAT_ID:
+        try:
+            msg = f"🎯 *SNIPER M3* \n📄 `{file_name}`\n🎹 *{final_key.upper()}* ({res_obj['camelot']})\n✅ Confiance: {res_obj['conf']}%"
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': msg, 'parse_mode': 'Markdown'})
+        except: pass
+
+    return res_obj
 
 # --- INTERFACE ---
-st.title("🎧 RCDJ228 Key Ultimate PRO")
-
-files = st.file_uploader(f"📂 CHARGER LES FICHIERS (Analyse: 180s/fichier)", accept_multiple_files=True, type=['mp3', 'wav', 'flac'])
+st.title("🎯 RCDJ228 SNIPER M3")
+files = st.file_uploader("📂 Audio", type=['mp3','wav','m4a','flac'], accept_multiple_files=True)
 
 if files:
-    total = len(files)
-    prog_bar = st.progress(0)
-    status_text = st.empty()
-    results_container = st.container()
-    
-    for idx, f in reversed(list(enumerate(files))):
-        status_text.text(f"Traitement {idx+1}/{total} : {f.name}...")
-        fid = f"{f.name}_{f.size}"
-        f.seek(0)
-        f_bytes = f.read()
-        data = get_full_analysis(f_bytes, f.name)
+    for i, f in enumerate(reversed(files)):
+        with st.status(f"Analyse Sniper : {f.name}...") as status:
+            prog_bar = st.progress(0)
+            data = process_audio_precision(f.getvalue(), f.name, _progress_callback=lambda v, m: prog_bar.progress(v))
+            status.update(label=f"✅ {f.name} Terminé", state="complete")
         
-        if data and "error" not in data:
-            with results_container.expander(f"📊 {data['file_name']}", expanded=True):
-                st.markdown(f"""
-                    <div class="final-decision-box" style="background:{data['rec']['bg']};">
-                        <h1 style="font-size:4.5em; margin:0; font-weight:900;">{data['rec']['note']}</h1>
-                        <h2 style="margin:0;">CAMELOT: {get_camelot_pro(data['rec']['note'])} • CERTITUDE: {data['rec']['conf']}%</h2>
-                        <p style="font-weight:bold; opacity:0.8;">MODE : {data['rec']['type'].upper()}</p>
-                    </div>
-                    <div class="solid-note-box">
-                        💎 STABILITÉ : <b>{data['note_solide']}</b> | RELATION : <b>{data['rec']['type']}</b> | TUNING : <b>{data['tuning']}</b>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                c1, c2, c3 = st.columns(3)
-                with c1: st.markdown(f'<div class="metric-container">BPM<br><span class="value-custom">{data["tempo"]}</span></div>', unsafe_allow_html=True)
-                with c2: get_sine_witness(data['rec']['note'], fid)
-                with c3: st.info(f"Analyse Harmonique complète terminée")
+        if data:
+            st.markdown(f"<div class='file-header'>📊 {data['name']}</div>", unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class="report-card" style="background:linear-gradient(135deg, #1e293b, #0f172a);">
+                    <div style="text-align:right"><span class="root-hint">Root Hint: {data['root_hint']}</span></div>
+                    <h1 style="font-size:6em; margin:0; font-weight:900;">{data['key'].upper()}</h1>
+                    <p style="font-size:1.5em; opacity:0.8;">{data['camelot']} | CONFIANCE: {data['conf']}%</p>
+                </div>""", unsafe_allow_html=True)
+            
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-box'><b>TEMPO</b><br><span style='font-size:2em; color:#10b981;'>{data['tempo']}</span><br>BPM</div>", unsafe_allow_html=True)
+            with c2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
+            with c3:
+                bid = f"pl_{i}"
+                components.html(f"""<button id="{bid}" style="width:100%; height:90px; background:#4F46E5; color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold;">🔊 TESTER L'ACCORD</button>
+                    <script>{get_chord_js(bid, data['key'])}</script>""", height=100)
+            
+            # Graphiques
+            g1, g2 = st.columns([2,1])
+            with g1:
+                fig = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", category_orders={"Note": NOTES_ORDER})
+                fig.update_layout(height=250, margin=dict(l=0,r=0,t=0,b=0))
+                st.plotly_chart(fig, use_container_width=True)
+            with g2:
+                fig_rd = go.Figure(data=go.Scatterpolar(r=data['chroma'], theta=NOTES_LIST, fill='toself', line_color='#10b981'))
+                fig_rd.update_layout(template="plotly_dark", height=250, polar=dict(radialaxis=dict(visible=False)), margin=dict(l=20,r=20,t=20,b=20))
+                st.plotly_chart(fig_rd, use_container_width=True)
+            st.markdown("<hr style='opacity:0.2'>", unsafe_allow_html=True)
 
-                # --- AFFICHAGE STREAMLIT ---
-                fig_st = px.line(pd.DataFrame(data['timeline']), x="Temps", y="Note", markers=True, template="plotly_dark", 
-                                category_orders={"Note": NOTES_ORDER})
-                fig_st.update_traces(line=dict(color="Cyan"), marker=dict(color="white"))
-                st.plotly_chart(fig_st, use_container_width=True)
-
-            # --- ENVOI TELEGRAM ---
-            try:
-                total_seg = len(data['timeline'])
-                main_count = sum(1 for s in data['timeline'] if s['Note'] == data['rec']['note'])
-                stability = int((main_count / total_seg) * 100) if total_seg > 0 else 0
-                trust_icon = "💎" if data['rec']['conf'] > 88 else "✅"
-                
-                cap = (
-                    f"🎧 *RAPPORT HARMONIQUE PRO*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📂 *FICHIER :* `{data['file_name']}`\n"
-                    f"🎹 *RÉSULTAT :* *{data['rec']['note']}*\n"
-                    f"├─ Camelot : `{get_camelot_pro(data['rec']['note'])}` 🌀\n"
-                    f"├─ Certitude : `{data['rec']['conf']}%` {trust_icon}\n"
-                    f"├─ Relation : `{data['rec']['type']}`\n"
-                    f"└─ Stabilité : `{stability}%` 🔥\n\n"
-                    f"⏱ *TEMPO :* `{data['tempo']} BPM` | `180s`\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"🚀 *Généré par RCDJ228 Key Ultimate*"
-                )
-                requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto", 
-                              files={'photo': data['plot_bytes']}, 
-                              data={'chat_id': CHAT_ID, 'caption': cap, 'parse_mode': 'Markdown'})
-            except Exception as e:
-                st.warning(f"Erreur Telegram : {e}")
-
-        prog_bar.progress((total - idx) / total)
-        gc.collect()
-
-    status_text.text(f"✅ Analyse de {total} fichiers terminée.")
-
-if st.sidebar.button("🧹 VIDER LE CACHE"):
-    st.cache_data.clear()
-    st.rerun()
+with st.sidebar:
+    st.header("Sniper Control")
+    if st.button("🗑️ Vider le cache"):
+        st.cache_data.clear()
+        st.rerun()
