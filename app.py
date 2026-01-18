@@ -1,4 +1,4 @@
-# RCDJ228 SNIPER M3 - VERSION ULTIME "TRIAD PRECISION" (RESILIENT EDITION)
+# RCDJ228 SNIPER M3 - VERSION ULTIME "TRIAD ONLY"
 import streamlit as st
 import librosa
 import numpy as np
@@ -22,7 +22,7 @@ if os.path.exists(r'C:\ffmpeg\bin'):
     os.environ["PATH"] += os.pathsep + r'C:\ffmpeg\bin'
 
 # --- CONFIGURATION SYSTÈME ---
-st.set_page_config(page_title="RCDJ228 SNIPER M3", page_icon="🎯", layout="wide")
+st.set_page_config(page_title="RCDJ228 SNIPER M3 - TRIAD", page_icon="🎯", layout="wide")
 
 # Récupération des secrets
 TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
@@ -37,18 +37,11 @@ CAMELOT_MAP = {
     'F# minor': '11A', 'G minor': '6A', 'G# minor': '1A', 'A minor': '8A', 'A# minor': '3A', 'B minor': '10A'
 }
 
+# PROFIL PURISTE : Uniquement les notes de la triade (Fondamentale, Tierce, Quinte)
 PROFILES = {
     "sniper_triads": {
         "major": [1.0, 0, 0, 0, 1.0, 0, 0, 1.0, 0, 0, 0, 0],
         "minor": [1.0, 0, 0, 1.0, 0, 0, 0, 1.0, 0, 0, 0, 0]
-    },
-    "krumhansl": {
-        "major": [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88],
-        "minor": [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17]
-    },
-    "temperley": {
-        "major": [5.0, 2.0, 3.5, 2.0, 4.5, 4.0, 2.0, 4.5, 2.0, 3.5, 1.5, 4.0],
-        "minor": [5.0, 2.0, 3.5, 4.5, 2.0, 4.0, 2.0, 4.5, 3.5, 2.0, 1.5, 4.0]
     }
 }
 
@@ -66,11 +59,6 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace; font-weight: bold; margin-bottom: 10px;
         border-left: 5px solid #10b981;
     }
-    .modulation-alert {
-        background: rgba(239, 68, 68, 0.15); color: #f87171;
-        padding: 15px; border-radius: 15px; border: 1px solid #ef4444;
-        margin-top: 20px; font-weight: bold; font-family: 'JetBrains Mono', monospace;
-    }
     .metric-box {
         background: #161b22; border-radius: 15px; padding: 20px; text-align: center; border: 1px solid #30363d;
         height: 100%; transition: 0.3s;
@@ -86,7 +74,7 @@ def apply_sniper_filters(y, sr):
     return lfilter(b, a, y_harm)
 
 def get_bass_priority(y, sr):
-    nyq = 0.6 * sr
+    nyq = 0.5 * sr
     b, a = butter(2, 150/nyq, btype='low')
     y_bass = lfilter(b, a, y)
     chroma_bass = librosa.feature.chroma_cqt(y=y_bass, sr=sr, n_chroma=12)
@@ -95,42 +83,30 @@ def get_bass_priority(y, sr):
 def solve_key_sniper(chroma_vector, bass_vector):
     best_overall_score = -1
     best_key = "Unknown"
-    # Normalisation pour comparaison équitable
+    
+    # Normalisation
     cv = (chroma_vector - chroma_vector.min()) / (chroma_vector.max() - chroma_vector.min() + 1e-6)
     bv = (bass_vector - bass_vector.min()) / (bass_vector.max() - bass_vector.min() + 1e-6)
     
-    for p_name, p_data in PROFILES.items():
-        for mode in ["major", "minor"]:
-            for i in range(12):
-                reference = np.roll(p_data[mode], i)
-                score = np.corrcoef(cv, reference)[0, 1]
+    # On ne boucle que sur sniper_triads
+    p_data = PROFILES["sniper_triads"]
+    for mode in ["major", "minor"]:
+        for i in range(12):
+            reference = np.roll(p_data[mode], i)
+            # Calcul de corrélation stricte sur les notes de la triade
+            score = np.corrcoef(cv, reference)[0, 1]
+            
+            # Bonus Basse : Si la fondamentale est présente en basse
+            if bv[i] > 0.7: score += 0.3
+            
+            # Bonus Quinte : Renforcement de la stabilité
+            fifth_idx = (i + 7) % 12
+            if cv[fifth_idx] > 0.6: score += 0.1
+            
+            if score > best_overall_score:
+                best_overall_score = score
+                best_key = f"{NOTES_LIST[i]} {mode}"
                 
-                # --- POIDS DES TRIADES ---
-                if p_name == "sniper_triads": score *= 5.0 
-                
-                # --- SÉCURITÉ MAJEUR / MINEUR (Validation de la Tierce) ---
-                third_major = (i + 4) % 12
-                third_minor = (i + 3) % 12
-                if mode == "major":
-                    if cv[third_major] > cv[third_minor]: score += 0.25 # Bonus si la tierce majeure est plus forte
-                else:
-                    if cv[third_minor] > cv[third_major]: score += 0.25 # Bonus si la tierce mineure est plus forte
-                
-                # --- VALIDATION MINEURE (Note Sensible / Dominante) ---
-                if mode == "minor":
-                    dom_idx, leading_tone = (i + 7) % 12, (i + 11) % 12
-                    if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.20 
-                
-                # Validation par la Basse
-                if bv[i] > 0.6: score += (bv[i] * 0.25)
-                
-                # Validation par la Quinte
-                fifth_idx = (i + 7) % 12
-                if cv[fifth_idx] > 0.5: score += 0.1
-                
-                if score > best_overall_score:
-                    best_overall_score = score
-                    best_key = f"{NOTES_LIST[i]} {mode}"
     return {"key": best_key, "score": best_overall_score}
 
 def process_audio_precision(file_obj, file_name, _progress_callback=None):
@@ -166,39 +142,34 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             b_seg = get_bass_priority(y[idx_start:idx_end], sr)
             res = solve_key_sniper(c_avg, b_seg)
             
-            # --- POIDS INTRO / OUTRO (30 secondes) ---
-            weight = 1.2 if (start < 30 or start > (duration - 30)) else 1.0
+            # Poids temporel
+            weight = 1.2 if (start < 20 or start > (duration - 20)) else 1.0
             votes[res['key']] += int(res['score'] * 100 * weight)
-            timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
+            timeline.append({"Note": res['key'], "Conf": res['score']})
 
         if not votes: return None
 
-        most_common = votes.most_common(2)
-        final_key = most_common[0][0]
+        final_key = votes.most_common(1)[0][0]
         final_conf = int(np.mean([t['Conf'] for t in timeline if t['Note'] == final_key]) * 100)
-        mod_detected = len(most_common) > 1 and (votes[most_common[1][0]] / max(1, sum(votes.values()))) > 0.28
-        target_key = most_common[1][0] if mod_detected else None
         tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
 
         res_obj = {
             "key": final_key, "camelot": CAMELOT_MAP.get(final_key, "??"),
             "conf": min(final_conf, 99), "tempo": int(float(tempo)),
-            "tuning": round(440 * (2**(tuning/12)), 1), "modulation": mod_detected,
-            "target_key": target_key, "target_camelot": CAMELOT_MAP.get(target_key, "??") if target_key else None,
-            "name": file_name
+            "tuning": round(440 * (2**(tuning/12)), 1), "name": file_name
         }
 
-        # Telegram notification
+        # Telegram
         if TELEGRAM_TOKEN and CHAT_ID:
             try:
-                caption = (f"🎯 *SNIPER M3*\n📄 `{file_name}`\n🎹 `{final_key.upper()}`\n🎡 `{res_obj['camelot']}`\n✅ `{res_obj['conf']}%`\n⚡ `{res_obj['tempo']} BPM`")
-                requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': caption, 'parse_mode': 'Markdown'}, timeout=5)
+                caption = (f"🎯 *SNIPER TRIAD*\n📄 `{file_name}`\n🎹 `{final_key.upper()}`\n🎡 `{res_obj['camelot']}`\n✅ `{res_obj['conf']}%`")
+                requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': caption, 'parse_mode': 'Markdown'}, timeout=2)
             except: pass
 
         del y, y_filt; gc.collect()
         return res_obj
     except Exception as e:
-        st.error(f"Erreur technique : {e}")
+        st.error(f"Erreur : {e}")
         return None
 
 def get_chord_js(btn_id, key_str):
@@ -210,82 +181,54 @@ def get_chord_js(btn_id, key_str):
         const intervals = '{mode}' === 'minor' ? [0, 3, 7, 12] : [0, 4, 7, 12];
         intervals.forEach(i => {{
             const o = ctx.createOscillator(); const g = ctx.createGain();
-            o.type = 'triangle'; o.frequency.setValueAtTime(freqs['{note}'] * Math.pow(2, i/12), ctx.currentTime);
+            o.type = 'sine'; o.frequency.setValueAtTime(freqs['{note}'] * Math.pow(2, i/12), ctx.currentTime);
             g.gain.setValueAtTime(0, ctx.currentTime);
-            g.gain.linearRampToValueAtTime(0.15, ctx.currentTime + 0.1);
-            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 2.0);
+            g.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.1);
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
             o.connect(g); g.connect(ctx.destination);
-            o.start(); o.stop(ctx.currentTime + 2.0);
+            o.start(); o.stop(ctx.currentTime + 1.5);
         }});
     }}; """
 
-# --- INITIALISATION ÉTAT ---
+# --- INITIALISATION ---
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = {}
 
-# --- INTERFACE ---
-st.title("🎯 RCDJ228 SNIPER M3")
+st.title("🎯 RCDJ228 SNIPER M3 (Triad Edition)")
 
-uploaded_files = st.file_uploader("📂 Déposez vos fichiers audio", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📂 Audio files", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
 if uploaded_files:
     total_files = len(uploaded_files)
-    st.write(f"### 📈 Progression Globale ({total_files} fichiers)")
     global_progress_bar = st.progress(0)
     global_status_text = st.empty()
-    
-    results_container = st.container()
     files_done = 0
     
     for f in uploaded_files:
-        if f.name in st.session_state.processed_files:
-            files_done += 1
-            global_progress_bar.progress(files_done / total_files)
-            continue
-            
-        success = False
-        while not success:
-            try:
-                global_status_text.info(f"Analyse en cours : `{f.name}` ({files_done + 1}/{total_files})")
-                with st.status(f"🚀 Sniper scan : `{f.name}`", expanded=False) as status:
-                    inner_bar = st.progress(0)
-                    data = process_audio_precision(f, f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
-                    
-                    if data:
-                        st.session_state.processed_files[f.name] = data
-                        status.update(label=f"✅ {f.name} analysé", state="complete")
-                        success = True
-                    else:
-                        status.update(label=f"⚠️ Échec sur {f.name}", state="error")
-                        break
-            except Exception:
-                st.warning("📡 Connexion instable... Re-tentative dans 5 secondes.")
-                time.sleep(5)
+        if f.name not in st.session_state.processed_files:
+            with st.status(f"Scanning `{f.name}`...", expanded=False):
+                inner_bar = st.progress(0)
+                data = process_audio_precision(f, f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
+                if data: st.session_state.processed_files[f.name] = data
         
         files_done += 1
         global_progress_bar.progress(files_done / total_files)
 
-    global_status_text.success(f"🏁 Mission terminée ! {total_files} fichiers analysés avec précision.")
-
-    with results_container:
-        for i, (name, data) in enumerate(reversed(st.session_state.processed_files.items())):
-            st.markdown(f"<div class='file-header'>📊 {data['name']}</div>", unsafe_allow_html=True)
-            color = "linear-gradient(135deg, #065f46, #064e3b)" if data['conf'] > 85 else "linear-gradient(135deg, #1e293b, #0f172a)"
-            st.markdown(f"""
-                <div class="report-card" style="background:{color};">
-                    <h1 style="font-size:5.5em; margin:10px 0; font-weight:900;">{data['key'].upper()}</h1>
-                    <p style="font-size:1.5em; opacity:0.9;">CAMELOT: <b>{data['camelot']}</b> | CONFIANCE: <b>{data['conf']}%</b></p>
-                    {f"<div class='modulation-alert'>⚠️ MODULATION : {data['target_key'].upper()}</div>" if data['modulation'] else ""}
-                </div> """, unsafe_allow_html=True)
-            
-            m1, m2, m3 = st.columns(3)
-            with m1: st.markdown(f"<div class='metric-box'><b>TEMPO</b><br><span style='font-size:2em; color:#10b981;'>{data['tempo']}</span><br>BPM</div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
-            with m3:
-                btn_id = f"play_{i}_{hash(name)}"
-                components.html(f"""<button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #4F46E5, #7C3AED); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold;">🔊 TESTER L'ACCORD</button>
-                                <script>{get_chord_js(btn_id, data['key'])}</script>""", height=110)
-            st.markdown("<br>", unsafe_allow_html=True)
+    for i, (name, data) in enumerate(reversed(st.session_state.processed_files.items())):
+        st.markdown(f"<div class='file-header'>📊 {data['name']}</div>", unsafe_allow_html=True)
+        st.markdown(f"""
+            <div class="report-card" style="background:linear-gradient(135deg, #1e293b, #0f172a);">
+                <h1 style="font-size:5em; margin:10px 0; font-weight:900; color:#10b981;">{data['key'].upper()}</h1>
+                <p style="font-size:1.5em; opacity:0.9;">CAMELOT: <b>{data['camelot']}</b> | CONFIANCE: <b>{data['conf']}%</b></p>
+            </div> """, unsafe_allow_html=True)
+        
+        m1, m2, m3 = st.columns(3)
+        with m1: st.markdown(f"<div class='metric-box'><b>TEMPO</b><br><span style='font-size:2em; color:#10b981;'>{data['tempo']}</span><br>BPM</div>", unsafe_allow_html=True)
+        with m2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
+        with m3:
+            btn_id = f"play_{i}_{hash(name)}"
+            components.html(f"""<button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #10b981, #059669); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold;">🔊 ÉCOUTER LA TRIADE</button>
+                            <script>{get_chord_js(btn_id, data['key'])}</script>""", height=110)
 
 if st.sidebar.button("🗑️ Vider l'historique"):
     st.session_state.processed_files = {}
