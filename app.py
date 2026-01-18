@@ -103,7 +103,7 @@ def solve_key_sniper(chroma_vector, bass_vector):
             for i in range(12):
                 reference = np.roll(p_data[mode], i)
                 score = np.corrcoef(cv, reference)[0, 1]
-                if p_name == "sniper_triads": score *= 1.2 
+                if p_name == "sniper_triads": score *= 3 
                 if mode == "minor":
                     dom_idx, leading_tone = (i + 7) % 12, (i + 11) % 12
                     if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.35 
@@ -150,7 +150,7 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             b_seg = get_bass_priority(y[idx_start:idx_end], sr)
             res = solve_key_sniper(c_avg, b_seg)
             
-            weight = 2.5 if (start < 8 or start > (duration - 12)) else 1.0
+            weight = 1.2 if (start < 30 or start > (duration - 30)) else 1.0
             votes[res['key']] += int(res['score'] * 100 * weight)
             timeline.append({"Temps": start, "Note": res['key'], "Conf": res['score']})
 
