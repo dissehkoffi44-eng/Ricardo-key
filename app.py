@@ -1,20 +1,15 @@
-# RCDJ228 SNIPER M3 - VERSION ULTIME "TRIAD ONLY"
+# RCDJ228 SNIPER M3 - VERSION ULTIME "TRIAD ONLY" + AUTO-TUNING + RMS NORM
 import streamlit as st
 import librosa
 import numpy as np
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 from collections import Counter
 import io
 import os
 import requests
 import gc
-import json
-import time
 import streamlit.components.v1 as components
 from scipy.signal import butter, lfilter
-from datetime import datetime
 from pydub import AudioSegment
 
 # --- FORCE FFMEG PATH (WINDOWS FIX) ---
@@ -24,7 +19,6 @@ if os.path.exists(r'C:\ffmpeg\bin'):
 # --- CONFIGURATION SYSTÈME ---
 st.set_page_config(page_title="RCDJ228 SNIPER M3 - TRIAD", page_icon="🎯", layout="wide")
 
-# Récupération des secrets
 TELEGRAM_TOKEN = st.secrets.get("TELEGRAM_TOKEN")
 CHAT_ID = st.secrets.get("CHAT_ID")
 
@@ -37,7 +31,6 @@ CAMELOT_MAP = {
     'F# minor': '11A', 'G minor': '6A', 'G# minor': '1A', 'A minor': '8A', 'A# minor': '3A', 'B minor': '10A'
 }
 
-# PROFIL PURISTE : Uniquement les notes de la triade (Fondamentale, Tierce, Quinte)
 PROFILES = {
     "sniper_triads": {
         "major": [1.0, 0, 0, 0, 1.0, 0, 0, 1.0, 0, 0, 0, 0],
@@ -67,6 +60,15 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- MOTEURS DE CALCUL ---
+
+def normalize_audio_rms(y, target_db=-20.0):
+    """Normalise le volume RMS pour une analyse uniforme"""
+    rms = np.sqrt(np.mean(y**2))
+    if rms == 0: return y
+    curr_db = 20 * np.log10(rms)
+    gain = 10**((target_db - curr_db) / 20)
+    return y * gain
+
 def apply_sniper_filters(y, sr):
     y_harm = librosa.effects.harmonic(y, margin=4.0)
     nyq = 0.5 * sr
@@ -83,34 +85,26 @@ def get_bass_priority(y, sr):
 def solve_key_sniper(chroma_vector, bass_vector):
     best_overall_score = -1
     best_key = "Unknown"
-    
-    # Normalisation
     cv = (chroma_vector - chroma_vector.min()) / (chroma_vector.max() - chroma_vector.min() + 1e-6)
     bv = (bass_vector - bass_vector.min()) / (bass_vector.max() - bass_vector.min() + 1e-6)
     
-    # On ne boucle que sur sniper_triads
     p_data = PROFILES["sniper_triads"]
     for mode in ["major", "minor"]:
         for i in range(12):
             reference = np.roll(p_data[mode], i)
-            # Calcul de corrélation stricte sur les notes de la triade
             score = np.corrcoef(cv, reference)[0, 1]
-            
-            # Bonus Basse : Si la fondamentale est présente en basse
             if bv[i] > 0.7: score += 0.3
-            
-            # Bonus Quinte : Renforcement de la stabilité
             fifth_idx = (i + 7) % 12
             if cv[fifth_idx] > 0.6: score += 0.1
             
             if score > best_overall_score:
                 best_overall_score = score
                 best_key = f"{NOTES_LIST[i]} {mode}"
-                
     return {"key": best_key, "score": best_overall_score}
 
 def process_audio_precision(file_obj, file_name, _progress_callback=None):
     try:
+        # Chargement
         ext = file_name.split('.')[-1].lower()
         if ext == 'm4a':
             audio = AudioSegment.from_file(file_obj, format="m4a")
@@ -118,16 +112,22 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             if audio.channels == 2: samples = samples.reshape((-1, 2)).mean(axis=1)
             y = samples / (2**15)
             sr = audio.frame_rate
-            if sr != 22050:
-                y = librosa.resample(y, orig_sr=sr, target_sr=22050)
-                sr = 22050
         else:
             y, sr = librosa.load(file_obj, sr=22050, mono=True)
         
-        duration = librosa.get_duration(y=y, sr=sr)
-        tuning = librosa.estimate_tuning(y=y, sr=sr)
-        y_filt = apply_sniper_filters(y, sr)
+        # 1. Normalisation RMS pour analyse uniforme
+        y = normalize_audio_rms(y)
+        
+        if sr != 22050:
+            y = librosa.resample(y, orig_sr=sr, target_sr=22050)
+            sr = 22050
 
+        duration = librosa.get_duration(y=y, sr=sr)
+        
+        # 2. Gestion précise du désaccordage (Tuning Correction)
+        tuning = librosa.estimate_tuning(y=y, sr=sr)
+        
+        y_filt = apply_sniper_filters(y, sr)
         step, timeline, votes = 2, [], Counter()
         segments = list(range(0, max(1, int(duration) - step), 1))
         
@@ -135,14 +135,14 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             if _progress_callback: _progress_callback(int((idx / len(segments)) * 100), f"Scan : {start}s")
             idx_start, idx_end = int(start * sr), int((start + step) * sr)
             seg = y_filt[idx_start:idx_end]
-            if len(seg) < 1000 or np.max(np.abs(seg)) < 0.01: continue
+            if len(seg) < 1000 or np.max(np.abs(seg)) < 0.001: continue
             
+            # Application du tuning ici pour aligner la détection
             c_raw = librosa.feature.chroma_cqt(y=seg, sr=sr, tuning=tuning, n_chroma=24, bins_per_octave=24)
             c_avg = np.mean((c_raw[::2, :] + c_raw[1::2, :]) / 2, axis=1)
             b_seg = get_bass_priority(y[idx_start:idx_end], sr)
             res = solve_key_sniper(c_avg, b_seg)
             
-            # Poids temporel
             weight = 1.2 if (start < 20 or start > (duration - 20)) else 1.0
             votes[res['key']] += int(res['score'] * 100 * weight)
             timeline.append({"Note": res['key'], "Conf": res['score']})
@@ -162,7 +162,7 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
         # Telegram
         if TELEGRAM_TOKEN and CHAT_ID:
             try:
-                caption = (f"🎯 *SNIPER TRIAD*\n📄 `{file_name}`\n🎹 `{final_key.upper()}`\n🎡 `{res_obj['camelot']}`\n✅ `{res_obj['conf']}%`")
+                caption = (f"🎯 *SNIPER TRIAD*\n📄 `{file_name}`\n🎹 `{final_key.upper()}`\n🎡 `{res_obj['camelot']}`\n✅ `{res_obj['conf']}%` | `{res_obj['tuning']}Hz`")
                 requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': caption, 'parse_mode': 'Markdown'}, timeout=2)
             except: pass
 
@@ -190,23 +190,23 @@ def get_chord_js(btn_id, key_str):
         }});
     }}; """
 
-# --- INITIALISATION ---
+# --- INTERFACE ---
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = {}
 
 st.title("🎯 RCDJ228 SNIPER M3 (Triad Edition)")
+st.caption("Auto-Tuning 440/432Hz & Normalisation RMS intégrés")
 
-uploaded_files = st.file_uploader("📂 Audio files", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📂 Charger les fichiers audio", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
 if uploaded_files:
     total_files = len(uploaded_files)
     global_progress_bar = st.progress(0)
-    global_status_text = st.empty()
     files_done = 0
     
     for f in uploaded_files:
         if f.name not in st.session_state.processed_files:
-            with st.status(f"Scanning `{f.name}`...", expanded=False):
+            with st.status(f"Analyse en cours : `{f.name}`...", expanded=False):
                 inner_bar = st.progress(0)
                 data = process_audio_precision(f, f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
                 if data: st.session_state.processed_files[f.name] = data
@@ -224,10 +224,10 @@ if uploaded_files:
         
         m1, m2, m3 = st.columns(3)
         with m1: st.markdown(f"<div class='metric-box'><b>TEMPO</b><br><span style='font-size:2em; color:#10b981;'>{data['tempo']}</span><br>BPM</div>", unsafe_allow_html=True)
-        with m2: st.markdown(f"<div class='metric-box'><b>ACCORDAGE</b><br><span style='font-size:2em; color:#58a6ff;'>{data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
+        with m2: st.markdown(f"<div class='metric-box'><b>RÉFÉRENCE</b><br><span style='font-size:2em; color:#58a6ff;'>{data['tuning']}</span><br>Hz</div>", unsafe_allow_html=True)
         with m3:
             btn_id = f"play_{i}_{hash(name)}"
-            components.html(f"""<button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #10b981, #059669); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold;">🔊 ÉCOUTER LA TRIADE</button>
+            components.html(f"""<button id="{btn_id}" style="width:100%; height:95px; background:linear-gradient(45deg, #10b981, #059669); color:white; border:none; border-radius:15px; cursor:pointer; font-weight:bold; box-shadow: 0 4px 15px rgba(16,185,129,0.3);">🔊 TESTER LA TRIADE</button>
                             <script>{get_chord_js(btn_id, data['key'])}</script>""", height=110)
 
 if st.sidebar.button("🗑️ Vider l'historique"):
