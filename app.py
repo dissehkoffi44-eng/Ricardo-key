@@ -86,7 +86,7 @@ def apply_sniper_filters(y, sr):
     return lfilter(b, a, y_harm)
 
 def get_bass_priority(y, sr):
-    nyq = 0.8 * sr
+    nyq = 0.6 * sr
     b, a = butter(2, 150/nyq, btype='low')
     y_bass = lfilter(b, a, y)
     chroma_bass = librosa.feature.chroma_cqt(y=y_bass, sr=sr, n_chroma=12)
@@ -106,7 +106,7 @@ def solve_key_sniper(chroma_vector, bass_vector):
                 score = np.corrcoef(cv, reference)[0, 1]
                 
                 # --- POIDS DES TRIADES ---
-                if p_name == "sniper_triads": score *= 3.0 
+                if p_name == "sniper_triads": score *= 5.0 
                 
                 # --- SÉCURITÉ MAJEUR / MINEUR (Validation de la Tierce) ---
                 third_major = (i + 4) % 12
