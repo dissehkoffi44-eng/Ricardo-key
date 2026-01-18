@@ -1,4 +1,4 @@
-# RCDJ228 SNIPER M3 - VERSION ULTIME "TRIAD ONLY"
+# RCDJ228 SNIPER M3 - VERSION ULTIME "TRIAD & AFRO-BOOST"
 import streamlit as st
 import librosa
 import numpy as np
@@ -80,10 +80,8 @@ def get_bass_priority(y, sr):
     chroma_bass = librosa.feature.chroma_cqt(y=y_bass, sr=sr, n_chroma=12)
     return np.mean(chroma_bass, axis=1)
 
-def solve_key_sniper_afro_edition(chroma_vector, bass_vector):
-    # On booste l'importance de la basse (fondamentale) car dans l'Afrobeat/Amapiano, 
-    # c'est elle qui définit la structure.
-    
+def solve_key_sniper(chroma_vector, bass_vector):
+    """Moteur optimisé pour Afrobeat/Amapiano via Triades et Bass Boost"""
     best_overall_score = -1
     best_key = "Unknown"
     
@@ -96,15 +94,13 @@ def solve_key_sniper_afro_edition(chroma_vector, bass_vector):
             reference = np.roll(p_data[mode], i)
             score = np.corrcoef(cv, reference)[0, 1]
             
-            # --- OPTIMISATION AFRO/AMAPIANO ---
-            # On donne un poids énorme (0.5 au lieu de 0.3) à la basse
+            # --- BOOST AFRO/AMAPIANO (Focus Basse & Log Drum) ---
             if bv[i] > 0.6: 
-                score += (bv[i] * 0.5) 
+                score += (bv[i] * 0.5) # Poids massif sur la tonique en basse
             
-            # Dans l'Amapiano, la quinte (i+7) est souvent jouée par le Log Drum
             fifth_idx = (i + 7) % 12
             if bv[fifth_idx] > 0.5:
-                score += 0.15
+                score += 0.15 # Support de la quinte (souvent présente dans les riffs de basse)
             
             if score > best_overall_score:
                 best_overall_score = score
@@ -143,10 +139,11 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             c_raw = librosa.feature.chroma_cqt(y=seg, sr=sr, tuning=tuning, n_chroma=24, bins_per_octave=24)
             c_avg = np.mean((c_raw[::2, :] + c_raw[1::2, :]) / 2, axis=1)
             b_seg = get_bass_priority(y[idx_start:idx_end], sr)
+            
+            # Appel synchronisé du moteur de calcul
             res = solve_key_sniper(c_avg, b_seg)
             
-            # Poids temporel
-            weight = 1.2 if (start < 20 or start > (duration - 20)) else 1.0
+            weight = 1.2 if (start < 25 or start > (duration - 25)) else 1.0
             votes[res['key']] += int(res['score'] * 100 * weight)
             timeline.append({"Note": res['key'], "Conf": res['score']})
 
@@ -162,7 +159,6 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
             "tuning": round(440 * (2**(tuning/12)), 1), "name": file_name
         }
 
-        # Telegram
         if TELEGRAM_TOKEN and CHAT_ID:
             try:
                 caption = (f"🎯 *SNIPER TRIAD*\n📄 `{file_name}`\n🎹 `{final_key.upper()}`\n🎡 `{res_obj['camelot']}`\n✅ `{res_obj['conf']}%`")
@@ -172,7 +168,7 @@ def process_audio_precision(file_obj, file_name, _progress_callback=None):
         del y, y_filt; gc.collect()
         return res_obj
     except Exception as e:
-        st.error(f"Erreur : {e}")
+        st.error(f"Erreur technique : {e}")
         return None
 
 def get_chord_js(btn_id, key_str):
@@ -193,23 +189,22 @@ def get_chord_js(btn_id, key_str):
         }});
     }}; """
 
-# --- INITIALISATION ---
+# --- INTERFACE STREAMLIT ---
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = {}
 
-st.title("🎯 RCDJ228 SNIPER M3 (Triad Edition)")
+st.title("🎯 RCDJ228 SNIPER M3 (Triad Afro-Boost)")
 
-uploaded_files = st.file_uploader("📂 Audio files", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
+uploaded_files = st.file_uploader("📂 Déposez vos fichiers Afro/Amapiano/Club", type=['mp3','wav','flac','m4a'], accept_multiple_files=True)
 
 if uploaded_files:
     total_files = len(uploaded_files)
     global_progress_bar = st.progress(0)
-    global_status_text = st.empty()
     files_done = 0
     
     for f in uploaded_files:
         if f.name not in st.session_state.processed_files:
-            with st.status(f"Scanning `{f.name}`...", expanded=False):
+            with st.status(f"Analyse de `{f.name}`...", expanded=False):
                 inner_bar = st.progress(0)
                 data = process_audio_precision(f, f.name, _progress_callback=lambda v, m: inner_bar.progress(v))
                 if data: st.session_state.processed_files[f.name] = data
@@ -220,7 +215,7 @@ if uploaded_files:
     for i, (name, data) in enumerate(reversed(st.session_state.processed_files.items())):
         st.markdown(f"<div class='file-header'>📊 {data['name']}</div>", unsafe_allow_html=True)
         st.markdown(f"""
-            <div class="report-card" style="background:linear-gradient(135deg, #1e293b, #0f172a);">
+            <div class="report-card" style="background:linear-gradient(135deg, #064e3b, #022c22);">
                 <h1 style="font-size:5em; margin:10px 0; font-weight:900; color:#10b981;">{data['key'].upper()}</h1>
                 <p style="font-size:1.5em; opacity:0.9;">CAMELOT: <b>{data['camelot']}</b> | CONFIANCE: <b>{data['conf']}%</b></p>
             </div> """, unsafe_allow_html=True)
