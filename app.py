@@ -119,7 +119,7 @@ def solve_key_sniper(chroma_vector, bass_vector):
                 # --- VALIDATION MINEURE (Note Sensible / Dominante) ---
                 if mode == "minor":
                     dom_idx, leading_tone = (i + 7) % 12, (i + 11) % 12
-                    if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.50 
+                    if cv[dom_idx] > 0.45 and cv[leading_tone] > 0.35: score *= 1.20 
                 
                 # Validation par la Basse
                 if bv[i] > 0.6: score += (bv[i] * 0.25)
